@@ -13,9 +13,10 @@ You can add your own models to hf_models and gguf_models. Look at how I've added
 ## Working install example
 
 <details>
-<summary></summary>
+<summary>Click me</summary>
+
 Commands used:
-```
+
     git clone https://github.com/Comfy-Org/ComfyUI.git
 
     cd ComfyUI
@@ -37,23 +38,20 @@ Commands used:
     cd ComfyUI-Qwen3.5-Uncensored
 
     uv pip install -r requirements.txt
-```
-|
-#### install llama-cpp-python from: 
 
+
+#### install llama-cpp-python from: 
 
 [https://github.com/JamePeng/llama-cpp-python/releases](https://github.com/JamePeng/llama-cpp-python/releases)
 
 copy link to fitting wheel, in this case cp313 cu130 for linux: `https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.34-cu130-Basic-linux-20260331/llama_cpp_python-0.3.34+cu130.basic-cp313-cp313-linux_x86_64.whl`
 
 pip install the .whl link (or file if you downloaded it)
-```
 
     uv pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.34-cu130-Basic-linux-20260331/llama_cpp_python-0.3.34+cu130.basic-cp313-cp313-linux_x86_64.whl
     
-```
+
 #### For speedups if you went py3.13 and cu130 on linux: [https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/tree/main](https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/tree/main)
-```
 
     uv pip install https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/resolve/main/flash_attn-2.8.3%2Bcu130torch2.10-cp313-cp313-linux_x86_64.whl
     
@@ -61,21 +59,15 @@ pip install the .whl link (or file if you downloaded it)
     
     uv pip install https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/resolve/main/sageattn3-1.0.0-cp313-cp313-linux_x86_64.whl
 
-```
 #### And windows many versions: https://wildminder.github.io/AI-windows-whl/
 
 After this I just ran 
-```
 
     .venv/bin/activate` 
-    
-```
+
 and then 
-```
 
     python main.py
-    
-```
     
 and normal qwen nodes and gguf nodes were working with qwen3.5. Also abliterated/heretic normal/gguf versions.
 
