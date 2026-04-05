@@ -30,6 +30,7 @@ from AILab_OutputCleaner import OutputCleanConfig, clean_model_output
 import sys
 sys.path.append(str(Path(__file__).parent))
 from AILab_QwenVL import PROMPT_CACHE, get_cache_key, get_alternative_cache_key, save_prompt_cache
+from AILab_QwenVL_GGUF import read_gguf_architecture
 
 # Simple global variable to store last generated prompt
 LAST_SAVED_PROMPT = None
@@ -100,19 +101,49 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         self.styles = STYLES
 
     @staticmethod
+    def _scan_local_gguf_text_models(base_dir: Path, existing_filenames: set[str]) -> dict[str, dict]:
+        """Scan the GGUF base directory for locally available text-only .gguf files."""
+        local_models: dict[str, dict] = {}
+        if not base_dir.exists() or not base_dir.is_dir():
+            return local_models
+        try:
+            for gguf_file in base_dir.rglob("*.gguf"):
+                if not gguf_file.is_file():
+                    continue
+                # Skip mmproj files — they are vision projectors, not text models
+                if "mmproj" in gguf_file.name.lower():
+                    continue
+                if gguf_file.name in existing_filenames:
+                    continue
+                display = f"[local] {gguf_file.name}"
+                local_models[display] = {
+                    "filename": str(gguf_file),
+                    "is_local": True,
+                    "repo_id": None,
+                    "alt_repo_ids": [],
+                    "author": None,
+                    "repo_dirname": gguf_file.parent.name,
+                    "context_length": 32768,
+                }
+        except PermissionError:
+            pass
+        if local_models:
+            print(f"[QwenVL] Discovered {len(local_models)} local GGUF text model(s) on disk")
+        return local_models
+
+    @staticmethod
     def load_gguf_models():
         fallback = {
             "base_dir": "LLM/GGUF",
             "models": {},
         }
-        if not GGUF_CONFIG_PATH.exists():
-            return fallback
-        try:
-            with open(GGUF_CONFIG_PATH, "r", encoding="utf-8") as fh:
-                data = json.load(fh) or {}
-        except Exception as exc:
-            print(f"[QwenVL] gguf_models.json load failed: {exc}")
-            return fallback
+        data = {}
+        if GGUF_CONFIG_PATH.exists():
+            try:
+                with open(GGUF_CONFIG_PATH, "r", encoding="utf-8") as fh:
+                    data = json.load(fh) or {}
+            except Exception as exc:
+                print(f"[QwenVL] gguf_models.json load failed: {exc}")
 
         base_dir = data.get("base_dir") or fallback["base_dir"]
 
@@ -156,6 +187,26 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
                     )
                     models[display] = entry
 
+        # Scan filesystem for locally available models not in JSON config
+        # Collect all directories to scan: the configured base_dir + any extra LLM paths from ComfyUI
+        existing_filenames = {Path(e.get("filename", "")).name for e in models.values() if e.get("filename")}
+        scan_dirs: list[Path] = [_resolve_base_dir(base_dir)]
+        try:
+            if "LLM" in folder_paths.folder_names_and_paths:
+                for llm_path in folder_paths.get_folder_paths("LLM"):
+                    gguf_dir = Path(llm_path) / "GGUF"
+                    if gguf_dir not in scan_dirs:
+                        scan_dirs.append(gguf_dir)
+                    llm_p = Path(llm_path)
+                    if llm_p not in scan_dirs:
+                        scan_dirs.append(llm_p)
+        except Exception:
+            pass
+        for scan_dir in scan_dirs:
+            local_models = AILab_QwenVL_GGUF_PromptEnhancer._scan_local_gguf_text_models(scan_dir, existing_filenames)
+            models.update(local_models)
+            existing_filenames.update(Path(e.get("filename", "")).name for e in local_models.values() if e.get("filename"))
+
         return {"base_dir": base_dir, "models": models}
 
     @classmethod
@@ -164,11 +215,11 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         preferred_style = "📝 Enhance"
         default_style = preferred_style if preferred_style in styles else (styles[0] if styles else "📝 Enhance")
         temp = cls.load_gguf_models()
-        model_keys = sorted(list((temp.get("models") or {}).keys())) or ["(edit gguf_models.json)"]
+        model_keys = sorted(list((temp.get("models") or {}).keys())) or ["(no GGUF models found)"]
         default_model = model_keys[0]
         return {
             "required": {
-                "model_name": (model_keys, {"default": default_model, "tooltip": "GGUF model entry defined in gguf_models.json."}),
+                "model_name": (model_keys, {"default": default_model, "tooltip": "GGUF model from config or auto-detected from models/LLM/GGUF directory. [local] prefix = found on disk."}),
                 "prompt_text": ("STRING", {"default": "", "multiline": True, "tooltip": "Prompt text to enhance. Leave blank to just emit the preset instruction."}),
                 "preset_system_prompt": (styles, {"default": default_style}),
                 "custom_system_prompt": ("STRING", {"default": "", "multiline": True}),
@@ -231,13 +282,17 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
                     entry = candidate
                     break
 
+        # Local models store absolute paths — use directly
+        filename = entry.get("filename")
+        if filename and Path(filename).is_absolute():
+            return Path(filename)
+
         base_dir = _resolve_base_dir(self.gguf_models.get("base_dir") or "LLM/GGUF")
 
         path = entry.get("path")
         if path:
             return Path(path).expanduser()
 
-        filename = entry.get("filename")
         if filename:
             author = _safe_dirname(str(entry.get("author") or entry.get("publisher") or ""))
             repo_dir = _safe_dirname(str(entry.get("repo_dirname") or model_name))
@@ -250,8 +305,11 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
     def _maybe_download_model(self, model_name, resolved):
         if resolved.exists():
             return
+        # Local models should already exist on disk — don't attempt download
         models = self.gguf_models.get("models") or {}
         entry = models.get(model_name) or {}
+        if entry.get("is_local"):
+            raise FileNotFoundError(f"[QwenVL] Local GGUF model not found: {resolved}")
         if not entry:
             wanted = _model_name_to_filename_candidates(model_name)
             for candidate in models.values():
@@ -343,10 +401,12 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
             "chat_format": "qwen",
         }
 
-        # Inject chat_template_kwargs correctly into Llama initialization for llama-cpp-python
-        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        # Detect architecture from GGUF metadata instead of relying on model name
+        arch = read_gguf_architecture(resolved)
+        is_qwen35 = arch in ("qwen35", "qwen35moe") if arch else "qwen3.5-" in model_name.lower()
         if is_qwen35:
             kwargs["chat_template_kwargs"] = {"enable_thinking": False}
+            print(f"[QwenVL] Qwen3.5 detected (arch={arch}): Disabling thinking in chat template.")
 
         self.llm = Llama(**kwargs)
         self.current_signature = signature

@@ -259,6 +259,11 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         self.text_tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
         self.text_model = AutoModelForCausalLM.from_pretrained(repo_id, trust_remote_code=True, **load_kwargs).eval()
         self.text_model.to(device)
+        # Detect architecture from loaded model config
+        hf_model_type = getattr(self.text_model.config, "model_type", None)
+        self.is_qwen35 = hf_model_type in ("qwen3_5", "qwen3_5_moe", "qwen3_5_vl") if hf_model_type else "qwen3.5-" in model_name.lower()
+        if self.is_qwen35:
+            print(f"[QwenVL] Qwen3.5 detected (model_type={hf_model_type}): Will disable thinking in chat template.")
         self.text_signature = signature
 
     def _invoke_text(
@@ -282,7 +287,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
             device_choice = device
 
         messages = [{"role": "user", "content": prompt}]
-        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        is_qwen35 = getattr(self, "is_qwen35", False)
         template_kwargs = {"tokenize": False, "add_generation_prompt": True}
 
         # Inject the disable thinking kwargs for HF Transformers correctly

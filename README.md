@@ -1,5 +1,17 @@
 ## ComfyUI-Qwen3.5-Uncensored
 
+### Automatic Local Model Discovery
+
+You no longer need to edit JSON config files to use your own models. The nodes now automatically scan your local models directories for available GGUF and HuggingFace models:
+
+- **GGUF models**: Any `.gguf` file found under `models/LLM/GGUF` (or any extra model path you've configured) shows up in the dropdown with a `[local]` prefix. mmproj files in the same directory are automatically paired with the model.
+- **HF models**: Any directory with model weights (`.safetensors`/`.bin`) found under `models/LLM/Qwen-VL` is automatically available.
+- Respects ComfyUI's `--base-directory`, `extra_model_paths.yaml`, and all registered LLM paths.
+- Model architecture (Qwen3.5 vs others) is detected from file metadata, not the model name — so any renamed/finetuned model is handled correctly.
+- Pre-configured models from `hf_models.json` and `gguf_models.json` still work as before with auto-download.
+
+---
+
 This repo is solely to share a couple of fixes which makes Qwen3.5 models available in QwenVL node pack.
 
 To use: Install torch torchvision torchaudio as per usual cu124 and up. This is only tested on Python 3.13, cu130, torch 2.10+2.11. But there are wheels for llama-cpp-python for CUDA Version is 12.4, 12.6, 12.8 or 13.0, Python Version is 3.10, 3.11, 3.12, 3.13 or 3.14
@@ -8,7 +20,7 @@ Make sure you follow the installation instructions for llama-cpp-python and inst
 
 Your transformers version MUST be 5.2.0+
 
-You can add your own models to hf_models and gguf_models. Look at how I've added them. But make sure the name used for the model starts with `Qwen3.5-` so the script knows to patch the model.
+You can add your own models to hf_models and gguf_models, or just drop them in your models directory and they'll be detected automatically. Qwen3.5 architecture is detected from model metadata (GGUF header / HF config.json), so model naming no longer matters.
 
 ## Working install example
 

@@ -292,8 +292,83 @@ def load_model_configs():
     HF_ALL_MODELS = dict(HF_VL_MODELS)
     HF_ALL_MODELS.update(HF_TEXT_MODELS)
 
+    # Scan local models directory for HF models not in JSON config
+    _scan_local_hf_models()
+
+
+def _scan_local_hf_models():
+    """Scan all LLM/Qwen-VL directories for locally available HF models not already in the config."""
+    global HF_VL_MODELS, HF_ALL_MODELS
+
+    # Collect all Qwen-VL directories to scan from ComfyUI's multi-path system
+    scan_dirs: list[Path] = []
+    llm_paths = folder_paths.get_folder_paths("LLM") if "LLM" in folder_paths.folder_names_and_paths else []
+    for llm_path in llm_paths:
+        qwen_dir = Path(llm_path) / "Qwen-VL"
+        if qwen_dir not in scan_dirs:
+            scan_dirs.append(qwen_dir)
+    # Always include the default location as fallback
+    default_dir = Path(folder_paths.models_dir) / "LLM" / "Qwen-VL"
+    if default_dir not in scan_dirs:
+        scan_dirs.append(default_dir)
+
+    # Collect known local directory names from JSON config
+    known_dirs = set()
+    for info in HF_ALL_MODELS.values():
+        repo_id = info.get("repo_id", "")
+        if isinstance(repo_id, str) and "/" in repo_id:
+            known_dirs.add(repo_id.split("/")[-1])
+        local_path = info.get("local_path")
+        if local_path:
+            known_dirs.add(Path(local_path).name)
+
+    count = 0
+    for models_dir in scan_dirs:
+        if not models_dir.exists() or not models_dir.is_dir():
+            continue
+        try:
+            for entry in models_dir.iterdir():
+                if not entry.is_dir():
+                    continue
+                if entry.name in known_dirs:
+                    continue
+                # Check if the directory contains model weights
+                has_weights = any(entry.glob("*.safetensors")) or any(entry.glob("*.bin"))
+                if not has_weights:
+                    continue
+                display = f"[local] {entry.name}"
+                model_info = {
+                    "local_path": str(entry),
+                    "repo_id": None,
+                    "is_local": True,
+                    "quantized": False,
+                }
+                HF_VL_MODELS[display] = model_info
+                HF_ALL_MODELS[display] = model_info
+                known_dirs.add(entry.name)
+                count += 1
+        except PermissionError:
+            pass
+
+    if count:
+        print(f"[QwenVL] Discovered {count} local HF model(s) on disk")
+
+
 if not HF_ALL_MODELS:
     load_model_configs()
+
+
+def read_hf_model_type(model_dir: str) -> str | None:
+    """Read model_type from a HuggingFace model's config.json."""
+    try:
+        config_path = Path(model_dir) / "config.json"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            return config.get("model_type")
+    except Exception:
+        pass
+    return None
 
 def check_pytorch_memory():
     """Check current PyTorch memory settings and allow user to set fraction"""
@@ -536,7 +611,18 @@ def ensure_model(model_name):
     info = HF_ALL_MODELS.get(model_name)
     if not info:
         raise ValueError(f"Model '{model_name}' not in config")
-    repo_id = info["repo_id"]
+
+    # Local models have a direct path — use it, skip download
+    local_path = info.get("local_path")
+    if local_path:
+        target = Path(local_path)
+        if target.exists() and target.is_dir():
+            return str(target)
+        raise FileNotFoundError(f"[QwenVL] Local HF model directory not found: {target}")
+
+    repo_id = info.get("repo_id")
+    if not repo_id:
+        raise ValueError(f"Model '{model_name}' has no repo_id or local_path")
 
     # Use ComfyUI's multi-path system if available
     llm_paths = folder_paths.get_folder_paths("LLM") if "LLM" in folder_paths.folder_names_and_paths else []
@@ -549,7 +635,7 @@ def ensure_model(model_name):
     models_dir.mkdir(parents=True, exist_ok=True)
     target = models_dir / repo_id.split("/")[-1]
 
-    # ✅ If already downloaded (has weights), use local without calling snapshot_download
+    # If already downloaded (has weights), use local without calling snapshot_download
     if target.exists() and target.is_dir():
         if any(target.glob("*.safetensors")) or any(target.glob("*.bin")):
             return str(target)
@@ -756,6 +842,11 @@ class QwenVLBase:
                 print(f"[QwenVL] torch.compile skipped: {exc}")
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        # Detect architecture from config.json instead of relying on model name
+        hf_model_type = read_hf_model_type(model_path)
+        self.is_qwen35 = hf_model_type in ("qwen3_5", "qwen3_5_moe", "qwen3_5_vl") if hf_model_type else "qwen3.5-" in model_name.lower()
+        if self.is_qwen35:
+            print(f"[QwenVL] Qwen3.5 detected (model_type={hf_model_type}): Will disable thinking in chat template.")
         self.current_signature = signature
 
     @staticmethod
@@ -799,11 +890,10 @@ class QwenVLBase:
         conversation[0]["content"].append({"type": "text", "text": prompt_text})
         
         # --- Qwen3.5 Heretic Logic: Template ---
-        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        is_qwen35 = getattr(self, "is_qwen35", False)
         chat_kwargs = {}
         if is_qwen35:
             chat_kwargs["enable_thinking"] = False
-            print("[QwenVL] Qwen3.5 detected: Disabling thinking in chat template.")
 
         # Optimize chat template for memory efficiency
         chat = self.processor.apply_chat_template(

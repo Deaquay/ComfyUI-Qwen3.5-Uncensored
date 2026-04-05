@@ -16,6 +16,7 @@ import io
 import inspect
 import json
 import os
+import struct
 import sys
 import time
 from dataclasses import dataclass
@@ -36,6 +37,65 @@ from AILab_OutputCleaner import OutputCleanConfig, clean_model_output
 
 # Simple global variable to store last generated prompt
 LAST_SAVED_PROMPT = None
+
+
+def read_gguf_architecture(filepath: Path) -> str | None:
+    """Read general.architecture from a GGUF file header without loading the model.
+
+    Returns the architecture string (e.g. 'qwen3', 'qwen2vl', 'llama') or None on failure.
+    """
+    # GGUF value type enum
+    _VTYPE_SIZE = {
+        0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8,
+    }
+    _VTYPE_STRING = 8
+    _VTYPE_ARRAY = 9
+
+    def _read_string(f):
+        length = struct.unpack("<Q", f.read(8))[0]
+        return f.read(length).decode("utf-8", errors="replace")
+
+    def _skip_value(f, vtype):
+        if vtype in _VTYPE_SIZE:
+            f.seek(_VTYPE_SIZE[vtype], 1)
+        elif vtype == _VTYPE_STRING:
+            length = struct.unpack("<Q", f.read(8))[0]
+            f.seek(length, 1)
+        elif vtype == _VTYPE_ARRAY:
+            arr_type = struct.unpack("<I", f.read(4))[0]
+            arr_len = struct.unpack("<Q", f.read(8))[0]
+            for _ in range(arr_len):
+                _skip_value(f, arr_type)
+        else:
+            return False  # unknown type, bail
+        return True
+
+    try:
+        with open(filepath, "rb") as f:
+            magic = f.read(4)
+            if magic != b"GGUF":
+                return None
+            version = struct.unpack("<I", f.read(4))[0]
+            if version not in (2, 3):
+                return None
+            _tensor_count = struct.unpack("<Q", f.read(8))[0]
+            kv_count = struct.unpack("<Q", f.read(8))[0]
+
+            for _ in range(kv_count):
+                key = _read_string(f)
+                vtype = struct.unpack("<I", f.read(4))[0]
+                if key == "general.architecture":
+                    if vtype == _VTYPE_STRING:
+                        return _read_string(f)
+                    else:
+                        return None
+                # Skip this value and continue searching
+                if not _skip_value(f, vtype):
+                    return None
+    except Exception:
+        return None
+    return None
+
 
 NODE_DIR = Path(__file__).parent
 CONFIG_PATH = NODE_DIR / "hf_models.json"
@@ -120,15 +180,66 @@ def _model_name_to_filename_candidates(model_name: str) -> set[str]:
     return candidates
 
 
-def _load_gguf_vl_catalog():
-    if not GGUF_CONFIG_PATH.exists():
-        return {"base_dir": "LLM/GGUF", "models": {}}
+def _scan_local_gguf_models(base_dir: Path, existing_filenames: set[str]) -> dict[str, dict]:
+    """Scan the GGUF base directory for locally available .gguf files not already in the JSON catalog."""
+    local_models: dict[str, dict] = {}
+    if not base_dir.exists() or not base_dir.is_dir():
+        return local_models
+
+    # Walk all subdirectories and collect .gguf files grouped by parent directory
+    dirs_with_gguf: dict[Path, list[Path]] = {}
     try:
-        with open(GGUF_CONFIG_PATH, "r", encoding="utf-8") as fh:
-            data = json.load(fh) or {}
-    except Exception as exc:
-        print(f"[QwenVL] gguf_models.json load failed: {exc}")
-        return {"base_dir": "LLM/GGUF", "models": {}}
+        for gguf_file in base_dir.rglob("*.gguf"):
+            if gguf_file.is_file():
+                parent = gguf_file.parent
+                dirs_with_gguf.setdefault(parent, []).append(gguf_file)
+    except PermissionError:
+        pass
+
+    for dir_path, gguf_files in dirs_with_gguf.items():
+        # Separate mmproj files from model files
+        mmproj_files = [f for f in gguf_files if "mmproj" in f.name.lower()]
+        model_files = [f for f in gguf_files if "mmproj" not in f.name.lower()]
+
+        # Pick the first mmproj file in this directory (if any)
+        mmproj_path = mmproj_files[0] if mmproj_files else None
+
+        for model_file in model_files:
+            # Skip if this filename is already in the JSON catalog
+            if model_file.name in existing_filenames:
+                continue
+
+            display = f"[local] {model_file.name}"
+            local_models[display] = {
+                "filename": str(model_file),
+                "mmproj_filename": str(mmproj_path) if mmproj_path else None,
+                "is_local": True,
+                "repo_id": None,
+                "alt_repo_ids": [],
+                "author": None,
+                "repo_dirname": dir_path.name,
+                "context_length": 32768,
+                "image_max_tokens": 4096,
+                "n_batch": 512,
+                "gpu_layers": -1,
+                "top_k": 20,
+                "pool_size": 4194304,
+            }
+
+    if local_models:
+        print(f"[QwenVL] Discovered {len(local_models)} local GGUF model(s) on disk")
+
+    return local_models
+
+
+def _load_gguf_vl_catalog():
+    data = {}
+    if GGUF_CONFIG_PATH.exists():
+        try:
+            with open(GGUF_CONFIG_PATH, "r", encoding="utf-8") as fh:
+                data = json.load(fh) or {}
+        except Exception as exc:
+            print(f"[QwenVL] gguf_models.json load failed: {exc}")
 
     base_dir = data.get("base_dir") or "LLM/GGUF"
 
@@ -167,6 +278,28 @@ def _load_gguf_vl_catalog():
     for name, entry in legacy_models.items():
         if isinstance(entry, dict):
             flattened[name] = entry
+
+    # Scan filesystem for locally available models not in JSON config
+    # Collect all directories to scan: the configured base_dir + any extra LLM paths from ComfyUI
+    existing_filenames = {Path(e.get("filename", "")).name for e in flattened.values() if e.get("filename")}
+    scan_dirs: list[Path] = [_resolve_base_dir(base_dir)]
+    try:
+        if "LLM" in folder_paths.folder_names_and_paths:
+            for llm_path in folder_paths.get_folder_paths("LLM"):
+                gguf_dir = Path(llm_path) / "GGUF"
+                if gguf_dir not in scan_dirs:
+                    scan_dirs.append(gguf_dir)
+                # Also scan the LLM path itself (users may put GGUFs directly there)
+                llm_p = Path(llm_path)
+                if llm_p not in scan_dirs:
+                    scan_dirs.append(llm_p)
+    except Exception:
+        pass
+    for scan_dir in scan_dirs:
+        local_models = _scan_local_gguf_models(scan_dir, existing_filenames)
+        flattened.update(local_models)
+        # Update existing_filenames so we don't add duplicates across directories
+        existing_filenames.update(Path(e.get("filename", "")).name for e in local_models.values() if e.get("filename"))
 
     return {"base_dir": base_dir, "models": flattened}
 
@@ -385,29 +518,39 @@ class QwenVLGGUFBase:
         self._load_backend()
 
         resolved = _resolve_model_entry(model_name)
-        base_dir = _resolve_base_dir(GGUF_VL_CATALOG.get("base_dir") or "llm/GGUF")
 
-        author_dir = _safe_dirname(resolved.author or "")
-        repo_dir = _safe_dirname(resolved.repo_dirname)
-        target_dir = base_dir / author_dir / repo_dir
+        # Local models store absolute paths — use them directly, skip download logic
+        if Path(resolved.model_filename).is_absolute():
+            model_path = Path(resolved.model_filename)
+            mmproj_path = Path(resolved.mmproj_filename) if resolved.mmproj_filename else None
+            if not model_path.exists():
+                raise FileNotFoundError(f"[QwenVL] Local GGUF model not found: {model_path}")
+            if mmproj_path is not None and not mmproj_path.exists():
+                raise FileNotFoundError(f"[QwenVL] Local mmproj not found: {mmproj_path}")
+        else:
+            base_dir = _resolve_base_dir(GGUF_VL_CATALOG.get("base_dir") or "llm/GGUF")
 
-        model_path = target_dir / Path(resolved.model_filename).name
-        mmproj_path = target_dir / Path(resolved.mmproj_filename).name if resolved.mmproj_filename else None
+            author_dir = _safe_dirname(resolved.author or "")
+            repo_dir = _safe_dirname(resolved.repo_dirname)
+            target_dir = base_dir / author_dir / repo_dir
 
-        repo_ids: list[str] = []
-        if resolved.repo_id:
-            repo_ids.append(resolved.repo_id)
-        repo_ids.extend(resolved.alt_repo_ids)
+            model_path = target_dir / Path(resolved.model_filename).name
+            mmproj_path = target_dir / Path(resolved.mmproj_filename).name if resolved.mmproj_filename else None
 
-        if not model_path.exists():
-            if not repo_ids:
-                raise FileNotFoundError(f"[QwenVL] GGUF model not found locally and no repo_id provided: {model_path}")
-            _download_single_file(repo_ids, resolved.model_filename, model_path)
+            repo_ids: list[str] = []
+            if resolved.repo_id:
+                repo_ids.append(resolved.repo_id)
+            repo_ids.extend(resolved.alt_repo_ids)
 
-        if mmproj_path is not None and not mmproj_path.exists():
-            if not repo_ids:
-                raise FileNotFoundError(f"[QwenVL] mmproj not found locally and no repo_id provided: {mmproj_path}")
-            _download_single_file(repo_ids, resolved.mmproj_filename, mmproj_path)
+            if not model_path.exists():
+                if not repo_ids:
+                    raise FileNotFoundError(f"[QwenVL] GGUF model not found locally and no repo_id provided: {model_path}")
+                _download_single_file(repo_ids, resolved.model_filename, model_path)
+
+            if mmproj_path is not None and not mmproj_path.exists():
+                if not repo_ids:
+                    raise FileNotFoundError(f"[QwenVL] mmproj not found locally and no repo_id provided: {mmproj_path}")
+                _download_single_file(repo_ids, resolved.mmproj_filename, mmproj_path)
 
         device_kind = _pick_device(device)
 
@@ -492,11 +635,12 @@ class QwenVLGGUFBase:
             "top_k": top_k_val,
         }
 
-        # Inject chat_template_kwargs correctly into Llama initialization for llama-cpp-python
-        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        # Detect architecture from GGUF metadata instead of relying on model name
+        arch = read_gguf_architecture(model_path)
+        is_qwen35 = arch in ("qwen35", "qwen35moe") if arch else "qwen3.5-" in model_name.lower()
         if is_qwen35:
             llm_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
-            print("[QwenVL] Qwen3.5 detected: Disabling thinking in chat template.")
+            print(f"[QwenVL] Qwen3.5 detected (arch={arch}): Disabling thinking in chat template.")
 
         if has_mmproj and self.chat_handler is not None:
             llm_kwargs["chat_handler"] = self.chat_handler
@@ -753,7 +897,7 @@ class AILab_QwenVL_GGUF(QwenVLGGUFBase):
     @classmethod
     def INPUT_TYPES(cls):
         all_models = GGUF_VL_CATALOG.get("models") or {}
-        model_keys = sorted([key for key, entry in all_models.items() if (entry or {}).get("mmproj_filename")]) or ["(edit gguf_models.json)"]
+        model_keys = sorted([key for key, entry in all_models.items() if (entry or {}).get("mmproj_filename")]) or ["(no GGUF VL models found)"]
         default_model = model_keys[0]
 
         prompts = PRESET_PROMPTS or ["🖼️ Detailed Description"]
@@ -823,7 +967,7 @@ class AILab_QwenVL_GGUF_Advanced(QwenVLGGUFBase):
     @classmethod
     def INPUT_TYPES(cls):
         all_models = GGUF_VL_CATALOG.get("models") or {}
-        model_keys = sorted([key for key, entry in all_models.items() if (entry or {}).get("mmproj_filename")]) or ["(edit gguf_models.json)"]
+        model_keys = sorted([key for key, entry in all_models.items() if (entry or {}).get("mmproj_filename")]) or ["(no GGUF VL models found)"]
         default_model = model_keys[0]
 
         prompts = PRESET_PROMPTS or ["🖼️ Detailed Description"]
