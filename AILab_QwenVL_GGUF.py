@@ -305,7 +305,7 @@ def _resolve_model_entry(model_name: str) -> GGUFVLResolved:
         image_max_tokens=_int("image_max_tokens", 4096),
         n_batch=_int("n_batch", 512),
         gpu_layers=_int("gpu_layers", -1),
-        top_k=_int("top_k", 0),
+        top_k=_int("top_k", 20),
         pool_size=_int("pool_size", 4194304),
     )
 
@@ -318,7 +318,7 @@ class QwenVLGGUFBase:
 
     def clear(self):
         print(f"[QwenVL GGUF DEBUG] Starting VRAM cleanup...")
-        
+
         # Force cleanup of chat handler first
         if self.chat_handler is not None:
             try:
@@ -331,7 +331,7 @@ class QwenVLGGUFBase:
                 print(f"[QwenVL GGUF DEBUG] Error closing chat_handler: {e}")
             finally:
                 self.chat_handler = None
-        
+
         # Force cleanup of LLM model
         if self.llm is not None:
             try:
@@ -346,13 +346,13 @@ class QwenVLGGUFBase:
                 print(f"[QwenVL GGUF DEBUG] Error closing LLM: {e}")
             finally:
                 self.llm = None
-        
+
         # Clear signature
         self.current_signature = None
-        
+
         # Aggressive garbage collection
         gc.collect()
-        
+
         # Force CUDA cache cleanup multiple times
         if torch.cuda.is_available():
             print(f"[QwenVL GGUF DEBUG] Clearing CUDA cache...")
@@ -360,7 +360,7 @@ class QwenVLGGUFBase:
             torch.cuda.synchronize()
             # Additional cleanup
             torch.cuda.empty_cache()
-        
+
         print(f"[QwenVL GGUF DEBUG] VRAM cleanup completed")
 
     def _load_backend(self):
@@ -442,7 +442,7 @@ class QwenVLGGUFBase:
         # Force aggressive cleanup before loading new model (especially for same model conflicts)
         print(f"[QwenVL GGUF DEBUG] Forcing cleanup before model loading...")
         self.clear()
-        
+
         # Additional wait for CUDA cleanup
         if torch.cuda.is_available():
             torch.cuda.synchronize()
@@ -491,6 +491,13 @@ class QwenVLGGUFBase:
             "pool_size": pool_size_val,
             "top_k": top_k_val,
         }
+
+        # Inject chat_template_kwargs correctly into Llama initialization for llama-cpp-python
+        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        if is_qwen35:
+            llm_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
+            print("[QwenVL] Qwen3.5 detected: Disabling thinking in chat template.")
+
         if has_mmproj and self.chat_handler is not None:
             llm_kwargs["chat_handler"] = self.chat_handler
             llm_kwargs["image_min_tokens"] = 1024
@@ -505,6 +512,7 @@ class QwenVLGGUFBase:
             )
         if device_kind == "cuda" and n_gpu_layers == 0:
             print("[QwenVL] Warning: device=cuda selected but n_gpu_layers=0; model will run on CPU.")
+
         self.llm = Llama(**llm_kwargs_filtered)
         self.current_signature = signature
 
@@ -518,6 +526,7 @@ class QwenVLGGUFBase:
         top_p: float,
         repetition_penalty: float,
         seed: int,
+        model_name: str = "",
     ) -> str:
         if images_b64:
             content = [{"type": "text", "text": user_prompt}]
@@ -543,7 +552,7 @@ class QwenVLGGUFBase:
             top_p=float(top_p),
             repeat_penalty=float(repetition_penalty),
             seed=int(seed),
-            stop=["<|im_end|>", "<|im_start|>"],
+            stop=["<|im_end|>", "<|im_start|>"]
         )
         elapsed = max(time.perf_counter() - start, 1e-6)
 
@@ -588,9 +597,9 @@ class QwenVLGGUFBase:
         keep_last_prompt=False,
     ):
         print(f"[QwenVL GGUF DEBUG] Starting run with seed={seed}, keep_last_prompt={keep_last_prompt}")
-        
+
         global LAST_SAVED_PROMPT
-        
+
         # Simple keep last prompt logic
         if keep_last_prompt:
             print(f"[QwenVL GGUF] Keep last prompt enabled - using last saved prompt")
@@ -600,17 +609,17 @@ class QwenVLGGUFBase:
             else:
                 print(f"[QwenVL GGUF] No previous prompt found, returning empty")
                 return ("",)
-        
+
         # Always generate when keep last prompt is disabled
         print(f"[QwenVL GGUF] Keep last prompt disabled - generating new prompt")
-        
+
         prompt_template = SYSTEM_PROMPTS.get(preset_prompt, preset_prompt)
-        
+
         # Generate cache key with all inputs including seed
         image_hash = get_image_hash(image)
         video_hash = get_video_hash(video)
         cache_key = get_cache_key(model_name, preset_prompt, custom_prompt, image_hash, video_hash, int(seed))
-        
+
         # TEMPORARILY DISABLED CACHE FOR DEBUGGING
         # Check cache first (only for random mode)
         # if cache_key in PROMPT_CACHE:
@@ -618,22 +627,22 @@ class QwenVLGGUFBase:
         #     if cached_text:
         #         print(f"[QwenVL GGUF] Using cached prompt for seed {seed}: {cache_key[:8]}...")
         #         return cached_text.strip()
-        
+
         print(f"[QwenVL GGUF DEBUG] Cache disabled - proceeding with generation")
-        
+
         if custom_prompt and custom_prompt.strip():
             # Combine user input with template - custom prompt first for priority
             prompt = f"{custom_prompt.strip()}\n\n{prompt_template}"
         else:
             prompt = prompt_template
-            
+
         print(f"[QwenVL GGUF DEBUG] Final prompt: {prompt[:100]}...")
 
         images_b64: list[str] = []
         if image is not None:
             print(f"[QwenVL GGUF DEBUG] Processing image...")
             print(f"[QwenVL GGUF DEBUG] Image shape before processing: {image.shape}")
-            
+
             # Handle batch images from T2V
             if len(image.shape) == 4:  # [batch, height, width, channels]
                 print(f"[QwenVL GGUF DEBUG] Detected batch image with shape: {image.shape}")
@@ -666,14 +675,14 @@ class QwenVLGGUFBase:
                     images_b64.append(img)
 
         print(f"[QwenVL GGUF DEBUG] Images processed: {len(images_b64)} images/videos")
-        
+
         # Debug video/image info
         if video is not None:
             print(f"[QwenVL GGUF DEBUG] Video shape: {video.shape}")
             print(f"[QwenVL GGUF DEBUG] Frame count requested: {frame_count}")
         if image is not None:
             print(f"[QwenVL GGUF DEBUG] Image shape: {image.shape}")
-        
+
         # Debug VRAM before model loading
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated()
@@ -708,11 +717,12 @@ class QwenVLGGUFBase:
                 top_p=top_p,
                 repetition_penalty=repetition_penalty,
                 seed=seed,
+                model_name=model_name,
             )
-            
+
             print(f"[QwenVL GGUF DEBUG] Generation completed. Text length: {len(text) if text else 0}")
             print(f"[QwenVL GGUF DEBUG] Generated text: {text[:100] if text else 'EMPTY'}...")
-            
+
             # Cache the generated text
             PROMPT_CACHE[cache_key] = {
                 "text": text,
@@ -724,15 +734,15 @@ class QwenVLGGUFBase:
                 "video_hash": video_hash
             }
             save_prompt_cache()  # Save cache to file
-            
+
             print(f"[QwenVL GGUF] Cached new prompt for seed {seed}: {cache_key[:8]}...")
-            
+
             print(f"[QwenVL GGUF DEBUG] Returning tuple with text...")
-            
+
             # Save the generated prompt for future bypass mode
             LAST_SAVED_PROMPT = text
             print(f"[QwenVL GGUF] Saved prompt for bypass mode: {text[:50]}...")
-            
+
             return (text,)
         finally:
             if not keep_model_loaded:
@@ -755,7 +765,7 @@ class AILab_QwenVL_GGUF(QwenVLGGUFBase):
                 "model_name": (model_keys, {"default": default_model}),
                 "preset_prompt": (prompts, {"default": default_prompt}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Additional user input that gets combined with the preset template. Leave empty to use only the template."}),
-                "max_tokens": ("INT", {"default": 512, "min": 64, "max": 2048}),
+                "max_tokens": ("INT", {"default": 8192, "min": 64, "max": 8192}),
                 "keep_model_loaded": ("BOOLEAN", {"default": True}),
                 "seed": ("INT", {"default": 1, "min": 1, "max": 2**32 - 1}),
                 "keep_last_prompt": ("BOOLEAN", {"default": False, "tooltip": "Keep the last generated prompt instead of creating a new one"}),
@@ -794,7 +804,7 @@ class AILab_QwenVL_GGUF(QwenVLGGUFBase):
             max_tokens=max_tokens,
             temperature=0.6,
             top_p=0.9,
-            repetition_penalty=1.05,
+            repetition_penalty=1.0,
             seed=seed,
             keep_model_loaded=keep_model_loaded,
             unload_after_run=unload_after_run,
@@ -830,16 +840,16 @@ class AILab_QwenVL_GGUF_Advanced(QwenVLGGUFBase):
                 "device": (device_options, {"default": "auto"}),
                 "preset_prompt": (prompts, {"default": default_prompt}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": "Additional user input that gets combined with the preset template. Leave empty to use only the template."}),
-                "max_tokens": ("INT", {"default": 512, "min": 64, "max": 4096}),
+                "max_tokens": ("INT", {"default": 8192, "min": 64, "max": 8192}),
                 "temperature": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 2.0}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0}),
-                "repetition_penalty": ("FLOAT", {"default": 1.2, "min": 0.5, "max": 2.0}),
+                "repetition_penalty": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0}),
                 "frame_count": ("INT", {"default": 16, "min": 1, "max": 64}),
                 "ctx": ("INT", {"default": 32768, "min": 1024, "max": 262144, "step": 512}),
                 "n_batch": ("INT", {"default": 512, "min": 64, "max": 32768, "step": 64}),
                 "gpu_layers": ("INT", {"default": -1, "min": -1, "max": 200}),
                 "image_max_tokens": ("INT", {"default": 4096, "min": 256, "max": 1024000, "step": 256}),
-                "top_k": ("INT", {"default": 0, "min": 0, "max": 32768}),
+                "top_k": ("INT", {"default": 20, "min": 0, "max": 32768}),
                 "pool_size": ("INT", {"default": 4194304, "min": 1048576, "max": 10485760, "step": 524288}),
                 "keep_model_loaded": ("BOOLEAN", {"default": True}),
                 "seed": ("INT", {"default": 1, "min": 1, "max": 2**32 - 1}),

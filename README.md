@@ -1,19 +1,16 @@
-# **QwenVL-Mod for ComfyUI**
+## ComfyUI-Qwen3.5-Uncensored
 
-[![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom%20Node-blue?style=for-the-badge&logo=python)](https://github.com/comfyanonymous/ComfyUI)
-[![License](https://img.shields.io/badge/License-GPL--3.0-green?style=for-the-badge)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.4-orange?style=for-the-badge)](https://github.com/huchukato/ComfyUI-QwenVL-Mod/releases)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)](https://python.org)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red?style=for-the-badge&logo=pytorch)](https://pytorch.org)
-[![CUDA](https://img.shields.io/badge/CUDA-12.8%2B-black?style=for-the-badge&logo=nvidia)](https://developer.nvidia.com/cuda-zone)
-[![HuggingFace](https://img.shields.io/badge/Models-Hugging%20Face-yellow?style=for-the-badge&logo=huggingface)](https://huggingface.co/Qwen)
-[![Downloads](https://img.shields.io/github/downloads/huchukato/ComfyUI-QwenVL-Mod/total?style=for-the-badge&logo=github)](https://github.com/huchukato/ComfyUI-QwenVL-Mod)
-[![Stars](https://img.shields.io/github/stars/huchukato/ComfyUI-QwenVL-Mod?style=for-the-badge&logo=github)](https://github.com/huchukato/ComfyUI-QwenVL-Mod)
-[![Issues](https://img.shields.io/github/issues/huchukato/ComfyUI-QwenVL-Mod?style=for-the-badge&logo=github)](https://github.com/huchukato/ComfyUI-QwenVL-Mod/issues)
+This repo is solely to share a couple of fixes which makes Qwen3.5 models available in QwenVL node pack.
 
-[![LightningAI](https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/app-2/studio-badge.svg)](https://lightning.ai/huchukato/environments/comfyui-v0-14-2-wan2-2-qwen3-vl-autoprompt)
+To use: Install torch torchvision torchaudio as per usual cu124 and up. This is only tested on Python 3.13, cu130, torch 2.10. But there are wheels for llama-cpp-python for CUDA Version is 12.4, 12.6, 12.8 or 13.0, Python Version is 3.10, 3.11, 3.12, 3.13 or 3.14
 
-[![buy-me-coffees](https://i.imgur.com/3MDbAtw.png)](https://buymeacoffee.com/huchukato)
+Make sure you follow the installation instructions for llama-cpp-python and install it from https://github.com/JamePeng/llama-cpp-python/releases/ AND NOT PIP unless your building from JamePeng's repository.
+
+Your transformers version MUST be 5.2.0+
+
+You can add your own models to hf_models and gguf_models. Look at how I've added them. But make sure the name used for the model starts with `Qwen3.5-` so the script knows to patch the model.
+
+# Real Readme
 
 ## 🚀 **API Support & Troubleshooting**
 
@@ -547,3 +544,4 @@ This enhanced version includes specialized prompts for **WAN 2.2** video generat
 ## **📜 License**
 
 This repository code is released under [GPL-3.0 License](LICENSE).
+

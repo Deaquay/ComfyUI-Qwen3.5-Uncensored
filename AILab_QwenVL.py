@@ -779,6 +779,7 @@ class QwenVLBase:
         top_p,
         num_beams,
         repetition_penalty,
+        model_name="",
     ):
         # Memory optimization: clear cache before generation
         gc.collect()
@@ -797,8 +798,20 @@ class QwenVLBase:
                 conversation[0]["content"].append({"type": "video", "video": frames})
         conversation[0]["content"].append({"type": "text", "text": prompt_text})
         
+        # --- Qwen3.5 Heretic Logic: Template ---
+        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        chat_kwargs = {}
+        if is_qwen35:
+            chat_kwargs["enable_thinking"] = False
+            print("[QwenVL] Qwen3.5 detected: Disabling thinking in chat template.")
+
         # Optimize chat template for memory efficiency
-        chat = self.processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
+        chat = self.processor.apply_chat_template(
+            conversation,
+            tokenize=False,
+            add_generation_prompt=True,
+            **chat_kwargs
+        )
         
         # Process images/videos more efficiently
         images = [item["image"] for item in conversation[0]["content"] if item["type"] == "image"]
@@ -828,6 +841,10 @@ class QwenVLBase:
         }
         if num_beams == 1:
             kwargs.update({"do_sample": True, "temperature": temperature, "top_p": top_p})
+            # --- Qwen3.5 Heretic Logic: Top K ---
+            if is_qwen35:
+                kwargs["top_k"] = 20
+                print("[QwenVL] Qwen3.5 detected: Forcing top_k=20 for recommended tuning.")
         else:
             kwargs["do_sample"] = False
             
@@ -920,6 +937,7 @@ class QwenVLBase:
                 top_p,
                 num_beams,
                 repetition_penalty,
+                model_name=model_name,
             )
             
             # Cache the generated text
@@ -959,7 +977,7 @@ class AILab_QwenVL(QwenVLBase):
                 "attention_mode": (ATTENTION_MODES, {"default": "auto", "tooltip": TOOLTIPS["attention_mode"]}),
                 "preset_prompt": (prompts, {"default": default_prompt, "tooltip": TOOLTIPS["preset_prompt"]}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": TOOLTIPS["custom_prompt"]}),
-                "max_tokens": ("INT", {"default": 512, "min": 64, "max": 2048, "tooltip": TOOLTIPS["max_tokens"]}),
+                "max_tokens": ("INT", {"default": 8192, "min": 64, "max": 8192, "tooltip": TOOLTIPS["max_tokens"]}),
                 "keep_model_loaded": ("BOOLEAN", {"default": True, "tooltip": TOOLTIPS["keep_model_loaded"]}),
                 "seed": ("INT", {"default": 1, "min": 1, "max": 2**32 - 1, "tooltip": TOOLTIPS["seed"] + "\n\n💡 Cache Info: Prompts are cached automatically. Use the same inputs (model, preset, custom prompt, image/video) to reuse cached prompts and avoid regeneration.\n\n🔒 Fixed Seed Mode: Set seed = 1 to ignore image/video changes and only use text-based caching. Perfect for keeping the same prompt regardless of media input variations."}),
                 "keep_last_prompt": ("BOOLEAN", {"default": False, "tooltip": "Keep the last generated prompt instead of creating a new one"}),
@@ -1001,11 +1019,11 @@ class AILab_QwenVL_Advanced(QwenVLBase):
                 "device": (device_options, {"default": "auto", "tooltip": TOOLTIPS["device"]}),
                 "preset_prompt": (prompts, {"default": default_prompt, "tooltip": TOOLTIPS["preset_prompt"]}),
                 "custom_prompt": ("STRING", {"default": "", "multiline": True, "tooltip": TOOLTIPS["custom_prompt"]}),
-                "max_tokens": ("INT", {"default": 2048, "min": 64, "max": 4096, "tooltip": TOOLTIPS["max_tokens"]}),
+                "max_tokens": ("INT", {"default": 8192, "min": 64, "max": 8192, "tooltip": TOOLTIPS["max_tokens"]}),
                 "temperature": ("FLOAT", {"default": 0.6, "min": 0.1, "max": 1.0, "tooltip": TOOLTIPS["temperature"]}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "tooltip": TOOLTIPS["top_p"]}),
                 "num_beams": ("INT", {"default": 1, "min": 1, "max": 8, "tooltip": TOOLTIPS["num_beams"]}),
-                "repetition_penalty": ("FLOAT", {"default": 1.2, "min": 0.5, "max": 2.0, "tooltip": TOOLTIPS["repetition_penalty"]}),
+                "repetition_penalty": ("FLOAT", {"default": 1.0, "min": 0.5, "max": 2.0, "tooltip": TOOLTIPS["repetition_penalty"]}),
                 "frame_count": ("INT", {"default": 16, "min": 1, "max": 64, "tooltip": TOOLTIPS["frame_count"]}),
                 "keep_model_loaded": ("BOOLEAN", {"default": True, "tooltip": TOOLTIPS["keep_model_loaded"]}),
                 "seed": ("INT", {"default": 1, "min": 1, "max": 2**32 - 1, "tooltip": TOOLTIPS["seed"] + "\n\n💡 Cache Info: Prompts are cached automatically. Use same inputs (model, preset, custom prompt, image/video) to reuse cached prompts and avoid regeneration.\n\n🔒 Fixed Seed Mode: Set seed = 1 to ignore image/video changes and only use text-based caching. Perfect for keeping the same prompt regardless of media input variations."}),

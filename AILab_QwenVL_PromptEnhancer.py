@@ -127,7 +127,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         keep_last_prompt=False,
     ):
         global LAST_SAVED_PROMPT
-        
+
         # Simple keep last prompt logic
         if keep_last_prompt:
             print(f"[QwenVL PromptEnhancer HF] Keep last prompt enabled - using last saved prompt")
@@ -137,10 +137,10 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
             else:
                 print(f"[QwenVL PromptEnhancer HF] No previous prompt found, returning empty")
                 return ("",)
-        
+
         # Always generate when keep last prompt is disabled
         print(f"[QwenVL PromptEnhancer HF] Keep last prompt disabled - generating new prompt")
-        
+
         base_instruction = custom_system_prompt.strip() or self.STYLES.get(
             enhancement_style,
             next(iter(self.STYLES.values()), ""),
@@ -175,11 +175,11 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
                 keep_model_loaded,
                 seed,
             )
-        
+
         # Save the generated prompt for future bypass mode
         LAST_SAVED_PROMPT = enhanced.strip()
         print(f"[QwenVL PromptEnhancer HF] Saved prompt for bypass mode: {LAST_SAVED_PROMPT[:50]}...")
-        
+
         return (enhanced.strip(),)
 
     def _invoke_qwen(
@@ -281,7 +281,21 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         else:
             device_choice = device
 
-        inputs = self.text_tokenizer(prompt, return_tensors="pt").to(device_choice)
+        messages = [{"role": "user", "content": prompt}]
+        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        template_kwargs = {"tokenize": False, "add_generation_prompt": True}
+
+        # Inject the disable thinking kwargs for HF Transformers correctly
+        if is_qwen35:
+            template_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
+
+        try:
+            formatted_prompt = self.text_tokenizer.apply_chat_template(messages, **template_kwargs)
+        except Exception:
+            # Fallback to raw prompt if the tokenizer lacks a chat template
+            formatted_prompt = prompt
+
+        inputs = self.text_tokenizer(formatted_prompt, return_tensors="pt").to(device_choice)
         kwargs = {
             "max_new_tokens": max_tokens,
             "repetition_penalty": repetition_penalty,
@@ -291,11 +305,20 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
             "eos_token_id": self.text_tokenizer.eos_token_id,
             "pad_token_id": self.text_tokenizer.eos_token_id,
         }
+
+        # Optional: Apply seed for generation reproducibility
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
         outputs = self.text_model.generate(**inputs, **kwargs)
-        decoded = self.text_tokenizer.decode(outputs[0], skip_special_tokens=True)
-        prefix = self.text_tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)
-        result = decoded[len(prefix) :].strip()
-        
+
+        # Strip out the input tokens to get just the generated response
+        input_length = inputs["input_ids"].shape[1]
+        generated_tokens = outputs[0][input_length:]
+        result = self.text_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
         # Cache the generated text
         # PROMPT_CACHE[cache_key] = {
         #     "text": result,
@@ -307,7 +330,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         #     "video_hash": None   # PromptEnhancer doesn't use videos
         # }
         # save_prompt_cache()  # Save cache to file
-        
+
         # print(f"[QwenVL PromptEnhancer HF] Cached new prompt for seed {seed}: {cache_key[:8]}...")
 
         if not keep_model_loaded:

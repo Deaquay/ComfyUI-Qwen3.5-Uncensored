@@ -342,6 +342,12 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
             "verbose": False,
             "chat_format": "qwen",
         }
+
+        # Inject chat_template_kwargs correctly into Llama initialization for llama-cpp-python
+        is_qwen35 = model_name.lower().startswith("qwen3.5-")
+        if is_qwen35:
+            kwargs["chat_template_kwargs"] = {"enable_thinking": False}
+
         self.llm = Llama(**kwargs)
         self.current_signature = signature
 

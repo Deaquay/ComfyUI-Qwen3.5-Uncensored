@@ -1,15 +1,15 @@
 [project]
-name = "ComfyUI-QwenVL-Mod"
+name = "ComfyUI-Qwen3.5-Uncensored"
 description = "Enhanced QwenVL node with WAN 2.2 workflows, multilingual support, visual style detection, smart prompt caching, and GGUF backend for professional video generation and multimodal AI."
 version = "2.2.3"
 license = {file = "LICENSE"}
-dependencies = ["transformers", "torch", "huggingface-hub", "hf_xet", "psutil", "numpy", "Pillow", "opencv-python", "bitsandbytes", "accelerate", "llama-cpp-python"]
+dependencies = ["transformers>=5.2.0", "torch", "huggingface-hub", "hf_xet", "psutil", "numpy", "Pillow", "opencv-python", "bitsandbytes", "accelerate", "llama-cpp-python"]
 
 [project.urls]
-Repository = "https://github.com/huchukato/ComfyUI-QwenVL-Mod"
+Repository = "https://github.com/Deaquay/ComfyUI-Qwen3.5-Uncensored"
 
 [tool.comfy]
-PublisherId = "huchukato"
-DisplayName = "ComfyUI-QwenVL-Mod"
+PublisherId = "Deaquay"
+DisplayName = "ComfyUI-Qwen3.5-Uncensored"
 Icon = ""
 Category = "video"
