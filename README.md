@@ -11,6 +11,9 @@ Your transformers version MUST be 5.2.0+
 You can add your own models to hf_models and gguf_models. Look at how I've added them. But make sure the name used for the model starts with `Qwen3.5-` so the script knows to patch the model.
 
 ## Working install example
+
+<details>
+<summary></summary>
 Commands used:
 ```
     git clone https://github.com/Comfy-Org/ComfyUI.git
@@ -38,8 +41,7 @@ Commands used:
 |
 #### install llama-cpp-python from: 
 
-<details>
-<summary></summary>
+
 [https://github.com/JamePeng/llama-cpp-python/releases](https://github.com/JamePeng/llama-cpp-python/releases)
 
 copy link to fitting wheel, in this case cp313 cu130 for linux: `https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.34-cu130-Basic-linux-20260331/llama_cpp_python-0.3.34+cu130.basic-cp313-cp313-linux_x86_64.whl`
