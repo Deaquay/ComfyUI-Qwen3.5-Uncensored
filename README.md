@@ -10,7 +10,96 @@ Your transformers version MUST be 5.2.0+
 
 You can add your own models to hf_models and gguf_models. Look at how I've added them. But make sure the name used for the model starts with `Qwen3.5-` so the script knows to patch the model.
 
-# Real Readme
+## Working install example
+Commands used:
+```
+    git clone https://github.com/Comfy-Org/ComfyUI.git
+
+    cd ComfyUI
+
+    uv v -p 3.13
+
+    source .venv/bin/activate.fish
+
+    uv pip install torch torchvision torchaudio xformers --torch-backend cu130
+
+    uv pip install triton-windows
+
+    uv pip install -r manager_requirements.txt && uv pip install -r requirements.txt
+
+    cd custom_nodes/
+
+    git clone https://github.com/Deaquay/ComfyUI-Qwen3.5-Uncensored.git
+
+    cd ComfyUI-Qwen3.5-Uncensored
+
+    uv pip install -r requirements.txt
+```
+|
+#### install llama-cpp-python from: 
+
+<details>
+<summary></summary>
+[https://github.com/JamePeng/llama-cpp-python/releases](https://github.com/JamePeng/llama-cpp-python/releases)
+
+copy link to fitting wheel, in this case cp313 cu130 for linux: `https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.34-cu130-Basic-linux-20260331/llama_cpp_python-0.3.34+cu130.basic-cp313-cp313-linux_x86_64.whl`
+
+pip install the .whl link (or file if you downloaded it)
+```
+
+    uv pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.34-cu130-Basic-linux-20260331/llama_cpp_python-0.3.34+cu130.basic-cp313-cp313-linux_x86_64.whl
+    
+```
+#### For speedups if you went py3.13 and cu130 on linux: [https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/tree/main](https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/tree/main)
+```
+
+    uv pip install https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/resolve/main/flash_attn-2.8.3%2Bcu130torch2.10-cp313-cp313-linux_x86_64.whl
+    
+    uv pip install https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/resolve/main/sageattention-2.2.0-cp313-cp313-linux_x86_64.whl
+    
+    uv pip install https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/resolve/main/sageattn3-1.0.0-cp313-cp313-linux_x86_64.whl
+
+```
+#### And windows many versions: https://wildminder.github.io/AI-windows-whl/
+
+After this I just ran 
+```
+
+    .venv/bin/activate` 
+    
+```
+and then 
+```
+
+    python main.py
+    
+```
+    
+and normal qwen nodes and gguf nodes were working with qwen3.5. Also abliterated/heretic normal/gguf versions.
+
+Lots of mixed abliterated and heretic versions included from qwen3-vl qwen3, and ofc qwen3.5
+
+
+
+#### Current Qwen3.5 models:
+
+Qwen3.5 4B 9B
+
+Qwen3.5 4B 9B 27B GGUF
+
+Qwen3.5-Uncensored-HauhauCS-Aggressive 4B 9B 27B
+
+Qwen3.5-heretic-v2 4B
+
+Qwen3.5-ultra-uncensored-heretic-v2 9B
+
+#### Any normal model is able to be added, either create an issue with a list of models you want added, or edit them in yourself.
+
+#### Don't hesitate to tell me if something is broken.
+
+</details>
+
+# Real Readme from original
 
 ## 🚀 **API Support & Troubleshooting**
 
