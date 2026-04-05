@@ -2,7 +2,7 @@
 
 This repo is solely to share a couple of fixes which makes Qwen3.5 models available in QwenVL node pack.
 
-To use: Install torch torchvision torchaudio as per usual cu124 and up. This is only tested on Python 3.13, cu130, torch 2.10. But there are wheels for llama-cpp-python for CUDA Version is 12.4, 12.6, 12.8 or 13.0, Python Version is 3.10, 3.11, 3.12, 3.13 or 3.14
+To use: Install torch torchvision torchaudio as per usual cu124 and up. This is only tested on Python 3.13, cu130, torch 2.10+2.11. But there are wheels for llama-cpp-python for CUDA Version is 12.4, 12.6, 12.8 or 13.0, Python Version is 3.10, 3.11, 3.12, 3.13 or 3.14
 
 Make sure you follow the installation instructions for llama-cpp-python and install it from https://github.com/JamePeng/llama-cpp-python/releases/ AND NOT PIP unless your building from JamePeng's repository.
 
