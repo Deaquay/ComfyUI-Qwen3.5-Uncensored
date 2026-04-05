@@ -991,7 +991,7 @@ class AILab_QwenVL(QwenVLBase):
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("RESPONSE",)
     FUNCTION = "process"
-    CATEGORY = "🔷 QwenVL-Mod/QwenVL"
+    CATEGORY = "Qwen3.5-Uncensored"
 
     def process(self, model_name, preset_prompt, custom_prompt, attention_mode, max_tokens, keep_model_loaded, seed, keep_last_prompt=False, image=None, video=None):
         # Always use FP16 - dropdown removed but keep working logic
@@ -1038,7 +1038,7 @@ class AILab_QwenVL_Advanced(QwenVLBase):
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("RESPONSE",)
     FUNCTION = "process"
-    CATEGORY = "🔷 QwenVL-Mod/QwenVL"
+    CATEGORY = "Qwen3.5-Uncensored"
 
     def process(self, model_name, attention_mode, use_torch_compile, device, preset_prompt, custom_prompt, max_tokens, temperature, top_p, num_beams, repetition_penalty, frame_count, keep_model_loaded, seed, keep_last_prompt, image=None, video=None):
         # Always use FP16 - dropdown removed but keep working logic
@@ -1051,6 +1051,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AILab_QwenVL": "QwenVL-Mod",
-    "AILab_QwenVL_Advanced": "QwenVL-Mod (Advanced)",
+    "AILab_QwenVL": "Qwen3.5-Uncensored",
+    "AILab_QwenVL_Advanced": "Qwen3.5-Uncensored (Advanced)",
 }

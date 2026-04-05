@@ -206,7 +206,8 @@
             "model_files": [
                 "Qwen3.5-4B-Q4_K_M.gguf",
                 "Qwen3.5-4B-Q6_K.gguf",
-                "Qwen3.5-4B-Q8_0.gguf""Qwen3.5-4B-BF16.gguf"
+                "Qwen3.5-4B-Q8_0.gguf",
+                "Qwen3.5-4B-BF16.gguf"
             ],
             "defaults": {
                 "context_length": 65536,
@@ -225,7 +226,8 @@
             "model_files": [
                 "Qwen3.5-9B-Q4_K_M.gguf",
                 "Qwen3.5-9B-Q6_K.gguf",
-                "Qwen3.5-9B-Q8_0.gguf""Qwen3.5-9B-BF16.gguf"
+                "Qwen3.5-9B-Q8_0.gguf",
+                "Qwen3.5-9B-BF16.gguf"
             ],
             "defaults": {
                 "context_length": 65536,
