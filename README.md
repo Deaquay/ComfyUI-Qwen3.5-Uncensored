@@ -27,7 +27,7 @@ Commands used:
 
     uv pip install torch torchvision torchaudio xformers --torch-backend cu130
 
-    uv pip install triton-windows
+    windows: uv pip install triton-windows
 
     uv pip install -r manager_requirements.txt && uv pip install -r requirements.txt
 
