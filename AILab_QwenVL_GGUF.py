@@ -934,7 +934,6 @@ class AILab_QwenVL_GGUF(QwenVLGGUFBase):
         keep_model_loaded,
         seed,
         keep_last_prompt,
-        unload_after_run,
         image=None,
         video=None,
     ):
@@ -951,7 +950,6 @@ class AILab_QwenVL_GGUF(QwenVLGGUFBase):
             repetition_penalty=1.0,
             seed=seed,
             keep_model_loaded=keep_model_loaded,
-            unload_after_run=unload_after_run,
             device="auto",
             ctx=None,
             n_batch=None,
