@@ -10,6 +10,8 @@ You no longer need to edit JSON config files to use your own models. The nodes n
 - Model architecture (Qwen3.5 vs others) is detected from file metadata, not the model name — so any renamed/finetuned model is handled correctly.
 - Pre-configured models from `hf_models.json` and `gguf_models.json` still work as before with auto-download.
 
+### REMEMBER TO INCLUDE MMPROJ FILE FOR LOCAL MODELS, ELSE THEY WONT SHOW UP IN THE MODELS LIST BECAUSE THEY WONT WORK
+
 ---
 
 This repo is solely to share a couple of fixes which makes Qwen3.5 models available in QwenVL node pack.
@@ -24,10 +26,8 @@ You can add your own models to hf_models and gguf_models, or just drop them in y
 
 ## Working install example
 
-<details>
-<summary>Click me</summary>
 
-Commands used:
+### Exact commands used:
 
     git clone https://github.com/Comfy-Org/ComfyUI.git
 
@@ -37,9 +37,9 @@ Commands used:
 
     source .venv/bin/activate.fish
 
-    uv pip install torch torchvision torchaudio xformers --torch-backend cu130
-
-    windows: uv pip install triton-windows
+    uv pip install torch==2.10 torchvision torchaudio==2.10 xformers --torch-backend cu130
+    
+    (on windows) uv pip install triton-windows
 
     uv pip install -r manager_requirements.txt && uv pip install -r requirements.txt
 
@@ -71,11 +71,15 @@ pip install the .whl link (or file if you downloaded it)
     
     uv pip install https://huggingface.co/jmig1109/comfyui-attn-wheels-cuda13/resolve/main/sageattn3-1.0.0-cp313-cp313-linux_x86_64.whl
 
-#### And windows many versions: https://wildminder.github.io/AI-windows-whl/
+#### And windows many versions: https://huggingface.co/Wildminder/AI-windows-whl/tree/main/
 
-After this I just ran 
+    uv pip install https://huggingface.co/Wildminder/AI-windows-whl/blob/main/flash_attn-2.8.3%2Bd20260121.cu130torch2.10.0cxx11abiTRUE-cp313-cp313-win_amd64.whl
+    
+    uv pip install https://huggingface.co/Wildminder/AI-windows-whl/blob/main/sageattention-2.2.0.post3%2Bcu130torch2.10.0-cp313-cp313-win_amd64.whl
 
-    .venv/bin/activate` 
+After this I just ran (from ComfyUI/ directory)
+
+    .venv/bin/activate
 
 and then 
 
