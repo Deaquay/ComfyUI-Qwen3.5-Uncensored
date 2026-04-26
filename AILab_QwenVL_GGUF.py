@@ -330,7 +330,12 @@ def _tensor_to_base64_png(tensor) -> str | None:
     if tensor.ndim == 4:
         tensor = tensor[0]
     array = (tensor * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
-    pil_img = Image.fromarray(array, mode="RGB")
+    if array.ndim == 2:
+        pil_img = Image.fromarray(array, mode="L")
+    elif array.shape[-1] == 4:
+        pil_img = Image.fromarray(array, mode="RGBA")
+    else:
+        pil_img = Image.fromarray(array[..., :3], mode="RGB")
     buf = io.BytesIO()
     pil_img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -787,25 +792,15 @@ class QwenVLGGUFBase:
             print(f"[QwenVL GGUF DEBUG] Processing image...")
             print(f"[QwenVL GGUF DEBUG] Image shape before processing: {image.shape}")
 
-            # Handle batch images from T2V
             if len(image.shape) == 4:  # [batch, height, width, channels]
                 print(f"[QwenVL GGUF DEBUG] Detected batch image with shape: {image.shape}")
-                # Take first frame from batch or process all frames
+                frame_img = image[0]
                 if image.shape[0] > 1:
-                    print(f"[QwenVL GGUF DEBUG] Processing {image.shape[0]} frames from batch")
-                    for i in range(image.shape[0]):
-                        frame_img = image[i]  # Take each frame from batch
-                        print(f"[QwenVL GGUF DEBUG] Processing batch frame {i} with shape: {frame_img.shape}")
-                        img = _tensor_to_base64_png(frame_img)
-                        if img:
-                            images_b64.append(img)
-                else:
-                    # Single frame in batch format
-                    frame_img = image[0]
-                    print(f"[QwenVL GGUF DEBUG] Single frame in batch, shape: {frame_img.shape}")
-                    img = _tensor_to_base64_png(frame_img)
-                    if img:
-                        images_b64.append(img)
+                    print(f"[QwenVL GGUF DEBUG] IMAGE input contains {image.shape[0]} items; using the first item only. Use the video input for multi-frame analysis.")
+                print(f"[QwenVL GGUF DEBUG] Single image from batch, shape: {frame_img.shape}")
+                img = _tensor_to_base64_png(frame_img)
+                if img:
+                    images_b64.append(img)
             else:
                 # Regular single image [height, width, channels]
                 print(f"[QwenVL GGUF DEBUG] Regular single image, shape: {image.shape}")

@@ -503,7 +503,14 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         print(f"[QwenVL PromptEnhancer GGUF] Keep last prompt disabled - generating new prompt")
         
         # Generate cache key with all inputs including seed
-        cache_key = get_cache_key(model_name, preset_system_prompt, prompt_text, seed=seed)
+        cache_prompt = "\n\n".join(
+            part for part in (
+                prompt_text.strip(),
+                custom_system_prompt.strip(),
+                f"english_output={bool(english_output)}",
+            ) if part
+        )
+        cache_key = get_cache_key(model_name, preset_system_prompt, cache_prompt, seed=seed)
         
         # Check cache first (only for random mode)
         if cache_key in PROMPT_CACHE:
@@ -513,7 +520,9 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
                 return (cached_text.strip(),)
         
         style_entry = self.styles.get(preset_system_prompt, {})
-        system_prompt = (custom_system_prompt.strip() or style_entry.get("system_prompt") or "").strip()
+        style_system_prompt = (style_entry.get("system_prompt") or "").strip()
+        custom_system_prompt = custom_system_prompt.strip()
+        system_prompt = "\n\n".join(part for part in (custom_system_prompt, style_system_prompt) if part).strip()
         if not system_prompt:
             raise ValueError("system_prompt is empty; check AILab_System_Prompts.json or preset selection.")
         system_prompt = (
