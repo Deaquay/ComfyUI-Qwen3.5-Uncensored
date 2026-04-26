@@ -30,7 +30,7 @@ from PIL import Image
 
 # Import cache functions from main module
 sys.path.append(str(Path(__file__).parent))
-from AILab_QwenVL import PROMPT_CACHE, get_cache_key, get_alternative_cache_key, get_image_hash, get_video_hash, save_prompt_cache
+from AILab_QwenVL import PROMPT_CACHE, ensure_cuda_vram_headroom, get_cache_key, get_alternative_cache_key, get_image_hash, get_video_hash, save_prompt_cache
 
 import folder_paths
 from AILab_OutputCleaner import OutputCleanConfig, clean_model_output
@@ -495,6 +495,10 @@ class QwenVLGGUFBase:
         if torch.cuda.is_available():
             print(f"[QwenVL GGUF DEBUG] Clearing CUDA cache...")
             torch.cuda.empty_cache()
+            try:
+                torch.cuda.ipc_collect()
+            except Exception:
+                pass
             torch.cuda.synchronize()
             # Additional cleanup
             torch.cuda.empty_cache()
@@ -585,6 +589,7 @@ class QwenVLGGUFBase:
             pool_size_val,
         )
         if self.llm is not None and self.current_signature == signature:
+            ensure_cuda_vram_headroom("QwenVL GGUF", min_free_gb=1.0, min_free_ratio=0.08)
             return
 
         # Force aggressive cleanup before loading new model (especially for same model conflicts)
@@ -677,6 +682,13 @@ class QwenVLGGUFBase:
         seed: int,
         model_name: str = "",
     ) -> str:
+        ensure_cuda_vram_headroom("QwenVL GGUF", min_free_gb=1.0, min_free_ratio=0.08)
+        if self.llm is not None and hasattr(self.llm, "reset"):
+            try:
+                self.llm.reset()
+            except Exception as exc:
+                print(f"[QwenVL GGUF DEBUG] llama context reset skipped: {exc}")
+
         if images_b64:
             content = [{"type": "text", "text": user_prompt}]
             for img in images_b64:

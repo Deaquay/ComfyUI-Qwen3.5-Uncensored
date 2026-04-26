@@ -119,6 +119,52 @@ def get_alternative_cache_key(model_name, preset_prompt, custom_prompt, image_ha
     print(f"[{module_name} DEBUG] No alternative cache found")
     return None
 
+def ensure_cuda_vram_headroom(module_name="QwenVL", min_free_gb=1.0, min_free_ratio=0.08):
+    if not torch.cuda.is_available():
+        return True
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+    try:
+        free_before, total = torch.cuda.mem_get_info()
+    except Exception:
+        gc.collect()
+        torch.cuda.empty_cache()
+        return True
+
+    allocated = torch.cuda.memory_allocated()
+    reserved = torch.cuda.memory_reserved()
+    reclaimable = max(reserved - allocated, 0)
+    threshold = max(int(min_free_gb * 1024**3), int(total * min_free_ratio))
+
+    if free_before >= threshold and reclaimable < 512 * 1024**2:
+        return True
+
+    print(
+        f"[{module_name}] VRAM headroom low before run: "
+        f"free={free_before / 1024**3:.2f}GB, "
+        f"reserved={reserved / 1024**3:.2f}GB, "
+        f"allocated={allocated / 1024**3:.2f}GB. Cleaning CUDA cache..."
+    )
+    gc.collect()
+    torch.cuda.empty_cache()
+    try:
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    try:
+        free_after, _ = torch.cuda.mem_get_info()
+        print(f"[{module_name}] VRAM after cleanup: free={free_after / 1024**3:.2f}GB")
+        return free_after >= threshold
+    except Exception:
+        return True
+
 def tensor_to_pil(tensor):
     """Convert tensor to PIL Image with memory optimization"""
     if tensor is None:
@@ -719,6 +765,10 @@ class QwenVLBase:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            try:
+                torch.cuda.ipc_collect()
+            except Exception:
+                pass
 
     def load_model(
         self,
@@ -761,6 +811,7 @@ class QwenVLBase:
         device = normalize_device_choice(device_requested)
         signature = (model_name, quant.value, attn_impl, device, use_compile)
         if keep_model_loaded and self.model is not None and self.current_signature == signature:
+            ensure_cuda_vram_headroom("QwenVL", min_free_gb=1.0, min_free_ratio=0.08)
             return
         self.clear()
         model_path = ensure_model(model_name)
@@ -879,9 +930,7 @@ class QwenVLBase:
         model_name="",
     ):
         # Memory optimization: clear cache before generation
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        ensure_cuda_vram_headroom("QwenVL", min_free_gb=1.0, min_free_ratio=0.08)
         
         conversation = [{"role": "user", "content": []}]
         if image is not None:

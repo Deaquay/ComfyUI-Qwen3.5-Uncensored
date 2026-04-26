@@ -19,6 +19,7 @@ from AILab_QwenVL import (
     HF_TEXT_MODELS,
     HF_VL_MODELS,
     PROMPT_CACHE,
+    ensure_cuda_vram_headroom,
     get_cache_key,
     get_alternative_cache_key,
     save_prompt_cache,
@@ -250,6 +251,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
 
         signature = (repo_id, quantization, device)
         if self.text_model is not None and self.text_signature == signature:
+            ensure_cuda_vram_headroom("QwenVL PromptEnhancer HF", min_free_gb=1.0, min_free_ratio=0.08)
             return
 
         self.text_model = None
@@ -266,6 +268,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         self.text_tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
         self.text_model = AutoModelForCausalLM.from_pretrained(repo_id, trust_remote_code=True, **load_kwargs).eval()
         self.text_model.to(device)
+        ensure_cuda_vram_headroom("QwenVL PromptEnhancer HF", min_free_gb=1.0, min_free_ratio=0.08)
         # Detect architecture from loaded model config
         hf_model_type = getattr(self.text_model.config, "model_type", None)
         self.is_qwen35 = hf_model_type in ("qwen3_5", "qwen3_5_moe", "qwen3_5_vl") if hf_model_type else "qwen3.5-" in model_name.lower()
@@ -287,6 +290,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         seed,
     ):
         self._load_text_model(model_name, quantization, device)
+        ensure_cuda_vram_headroom("QwenVL PromptEnhancer HF", min_free_gb=1.0, min_free_ratio=0.08)
 
         if device == "auto":
             device_choice = "cuda" if torch.cuda.is_available() else ("mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu")

@@ -29,7 +29,7 @@ from AILab_OutputCleaner import OutputCleanConfig, clean_model_output
 # Import cache functions from main module
 import sys
 sys.path.append(str(Path(__file__).parent))
-from AILab_QwenVL import PROMPT_CACHE, get_cache_key, get_alternative_cache_key, save_prompt_cache
+from AILab_QwenVL import PROMPT_CACHE, ensure_cuda_vram_headroom, get_cache_key, get_alternative_cache_key, save_prompt_cache
 from AILab_QwenVL_GGUF import read_gguf_architecture
 
 # Simple global variable to store last generated prompt
@@ -264,6 +264,10 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         if torch.cuda.is_available():
             print(f"[QwenVL PromptEnhancer DEBUG] Clearing CUDA cache...")
             torch.cuda.empty_cache()
+            try:
+                torch.cuda.ipc_collect()
+            except Exception:
+                pass
             torch.cuda.synchronize()
             # Additional cleanup
             torch.cuda.empty_cache()
@@ -370,6 +374,7 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         context_length = model_cfg.get("context_length", 32768)
         signature = (resolved, context_length, device)
         if self.llm is not None and self.current_signature == signature:
+            ensure_cuda_vram_headroom("QwenVL PromptEnhancer GGUF", min_free_gb=1.0, min_free_ratio=0.08)
             return
         
         # Force aggressive cleanup before loading new model (especially for same model conflicts)
@@ -434,6 +439,12 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
             )
 
         def _call(system: str, user: str, temp: float, seed_val: int) -> str:
+            ensure_cuda_vram_headroom("QwenVL PromptEnhancer GGUF", min_free_gb=1.0, min_free_ratio=0.08)
+            if self.llm is not None and hasattr(self.llm, "reset"):
+                try:
+                    self.llm.reset()
+                except Exception as exc:
+                    print(f"[QwenVL PromptEnhancer DEBUG] llama context reset skipped: {exc}")
             response = self.llm.create_chat_completion(
                 messages=[
                     {"role": "system", "content": system},
