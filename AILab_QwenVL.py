@@ -856,7 +856,13 @@ class QwenVLBase:
         if tensor.dim() == 4:
             tensor = tensor[0]
         array = (tensor.cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
-        return Image.fromarray(array)
+        if array.ndim == 2:
+            return Image.fromarray(array, mode="L")
+        if array.shape[-1] == 1:
+            return Image.fromarray(array[..., 0], mode="L")
+        if array.shape[-1] == 4:
+            return Image.fromarray(array, mode="RGBA")
+        return Image.fromarray(array[..., :3], mode="RGB")
 
     @torch.no_grad()
     def generate(
@@ -879,6 +885,8 @@ class QwenVLBase:
         
         conversation = [{"role": "user", "content": []}]
         if image is not None:
+            if image.dim() == 4 and image.shape[0] > 1:
+                print(f"[QwenVL] IMAGE input contains {image.shape[0]} items; using the first item only. Use the video input for multi-frame analysis.")
             conversation[0]["content"].append({"type": "image", "image": self.tensor_to_pil(image)})
         if video is not None:
             frames = [self.tensor_to_pil(frame) for frame in video]

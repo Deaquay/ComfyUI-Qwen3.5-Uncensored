@@ -98,7 +98,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
                 "prompt_text": ("STRING", {"default": "", "multiline": True, "tooltip": "Prompt text to enhance. Leave blank to just emit the preset instruction."}),
                 "enhancement_style": (styles, {"default": default_style}),
                 "custom_system_prompt": ("STRING", {"default": "", "multiline": True}),
-                "max_tokens": ("INT", {"default": 256, "min": 32, "max": 1024}),
+                "max_tokens": ("INT", {"default": 256, "min": 32, "max": 8192}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.1, "max": 1.0}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 0.5, "max": 2.0}),
@@ -141,10 +141,12 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         # Always generate when keep last prompt is disabled
         print(f"[QwenVL PromptEnhancer HF] Keep last prompt disabled - generating new prompt")
 
-        base_instruction = custom_system_prompt.strip() or self.STYLES.get(
+        style_instruction = self.STYLES.get(
             enhancement_style,
             next(iter(self.STYLES.values()), ""),
-        )
+        ).strip()
+        custom_instruction = custom_system_prompt.strip()
+        base_instruction = "\n\n".join(part for part in (custom_instruction, style_instruction) if part)
         user_prompt = prompt_text.strip() or "Describe a scene vividly."
         merged_prompt = f"{user_prompt}\n\n{base_instruction}".strip()
         if model_name in HF_TEXT_MODELS:
