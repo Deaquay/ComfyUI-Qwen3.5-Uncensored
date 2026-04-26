@@ -14,6 +14,8 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+from AILab_OutputCleaner import OutputCleanConfig, clean_model_output, prompt_output_guard
+
 from AILab_QwenVL import (
     ATTENTION_MODES,
     HF_TEXT_MODELS,
@@ -153,6 +155,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         base_instruction = "\n\n".join(part for part in (custom_instruction, style_instruction) if part)
         if not base_instruction and is_custom_only:
             raise ValueError("custom_system_prompt is required when using Custom Only (no preset).")
+        base_instruction = "\n\n".join(part for part in (base_instruction, prompt_output_guard()) if part)
         user_prompt = prompt_text.strip() or "Describe a scene vividly."
         merged_prompt = f"{user_prompt}\n\n{base_instruction}".strip()
         if model_name in HF_TEXT_MODELS:
@@ -334,6 +337,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         input_length = inputs["input_ids"].shape[1]
         generated_tokens = outputs[0][input_length:]
         result = self.text_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        result = clean_model_output(result, OutputCleanConfig(mode="prompt")) or result
 
         # Cache the generated text
         # PROMPT_CACHE[cache_key] = {

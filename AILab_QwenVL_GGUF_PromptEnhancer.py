@@ -24,7 +24,7 @@ from huggingface_hub import hf_hub_download, snapshot_download
 from llama_cpp import Llama
 
 import folder_paths
-from AILab_OutputCleaner import OutputCleanConfig, clean_model_output
+from AILab_OutputCleaner import OutputCleanConfig, clean_model_output, prompt_output_guard
 
 # Import cache functions from main module
 import sys
@@ -432,7 +432,7 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
                 return False
             return bool(
                 re.search(
-                    r"(?im)^\s*(okay[,.:]?|first[,.:]?|next[,.:]?|then[,.:]?|wait[,.:]?)\b",
+                    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?\s*(okay[,.:]?|first[,.:]?|next[,.:]?|then[,.:]?|wait[,.:]?|final\s+plan|final\s+check)\b",
                     text,
                 )
                 or re.search(r"(?i)\b(i\s+(should|need|must|will|am\s+going\s+to|have\s+to))\b", text)
@@ -540,12 +540,7 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
             if is_custom_only:
                 raise ValueError("custom_system_prompt is required when using Custom Only (no preset).")
             raise ValueError("system_prompt is empty; check AILab_System_Prompts.json or preset selection.")
-        if not is_custom_only:
-            system_prompt = (
-                f"{system_prompt}\n\n"
-                "Return only the final prompt text. No preface, no explanations, no analysis, no JSON, no markdown fences, and no </think>.\n"
-                "Do not write planning steps (no 'First', 'Next', 'Then') and do not use first-person ('I', 'we')."
-            )
+        system_prompt = f"{system_prompt}\n\n{prompt_output_guard()}"
         merged_prompt = prompt_text.strip() or "Describe a scene vividly."
         self._load_model(model_name, device)
         enhanced = self._invoke_llama(
