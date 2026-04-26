@@ -14,11 +14,14 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+from AILab_OutputCleaner import OutputCleanConfig, clean_model_output, prompt_output_guard
+
 from AILab_QwenVL import (
     ATTENTION_MODES,
     HF_TEXT_MODELS,
     HF_VL_MODELS,
     PROMPT_CACHE,
+    ensure_cuda_vram_headroom,
     get_cache_key,
     get_alternative_cache_key,
     save_prompt_cache,
@@ -32,14 +35,15 @@ LAST_SAVED_PROMPT = None
 
 NODE_DIR = Path(__file__).parent
 SYSTEM_PROMPTS_PATH = NODE_DIR / "AILab_System_Prompts.json"
+CUSTOM_ONLY_STYLE = "✍️ Custom Only (no preset)"
 
 DEFAULT_STYLES = {
-    "📝 Enhance": "Expand and enrich this prompt with vivid visual context:",
-    "📝 Refine": "Polish this prompt for clarity and precise AI interpretation:",
-    "📝 Creative Rewrite": "Rewrite this prompt imaginatively while preserving intent:",
-    "📝 Detailed Visual": "Turn this prompt into a highly detailed visual description:",
-    "📝 Artistic Style": "Describe this prompt in artistic language suitable for image generation:",
-    "📝 Technical Specs": "Convert this prompt into clear technical parameters:",
+    "📝 Enhance": "Write one production-ready prompt paragraph in the same language as the user. Expand the idea with concrete subject, action, environment, lighting, camera, composition, color, texture, mood, and style details. Output only the final prompt paragraph.",
+    "📝 Refine": "Write one polished prompt paragraph in the same language as the user. Preserve the core intent, remove redundancy and contradiction, and add useful visual specificity for subject, scene, lighting, camera perspective, composition, palette, texture, and atmosphere. Output only the final prompt paragraph.",
+    "📝 Creative Rewrite": "Write one fresh, imaginative prompt paragraph in the same language as the user. Preserve the core intent while adding cohesive cinematic atmosphere, gesture, micro-details, color relationships, light interaction, materials, depth, and composition. Output only the final prompt paragraph.",
+    "📝 Detailed Visual": "Write one highly detailed visual prompt paragraph in the same language as the user. Include subject traits, pose, expression, wardrobe, materials, foreground, midground, background, lighting source and direction, palette, contrast, lens feel, depth of field, framing, and final aesthetic style. Output only the final prompt paragraph.",
+    "📝 Artistic Style": "Write one artistic prompt paragraph in the same language as the user. Build a coherent visual direction with mood, palette, shape language, contrast, material feel, camera perspective, composition rhythm, and fitting style references. Output only the final prompt paragraph.",
+    "📝 Technical Specs": "Write one clear technical photography or cinematography prompt paragraph in the same language as the user. Include camera distance, angle, lens feel, aperture or depth of field, focus target, lighting type and direction, color temperature, contrast, framing, background separation, texture rendering, and final image style. Output only the final prompt paragraph.",
 }
 
 
@@ -65,6 +69,7 @@ def _load_prompt_styles() -> dict[str, str]:
 
 
 PROMPT_STYLES = _load_prompt_styles()
+PROMPT_STYLES = {CUSTOM_ONLY_STYLE: "", **PROMPT_STYLES}
 
 
 class AILab_QwenVL_PromptEnhancer(QwenVLBase):
@@ -98,7 +103,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
                 "prompt_text": ("STRING", {"default": "", "multiline": True, "tooltip": "Prompt text to enhance. Leave blank to just emit the preset instruction."}),
                 "enhancement_style": (styles, {"default": default_style}),
                 "custom_system_prompt": ("STRING", {"default": "", "multiline": True}),
-                "max_tokens": ("INT", {"default": 256, "min": 32, "max": 1024}),
+                "max_tokens": ("INT", {"default": 1024, "min": 32, "max": 16384}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.1, "max": 1.0}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0}),
                 "repetition_penalty": ("FLOAT", {"default": 1.1, "min": 0.5, "max": 2.0}),
@@ -141,10 +146,16 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         # Always generate when keep last prompt is disabled
         print(f"[QwenVL PromptEnhancer HF] Keep last prompt disabled - generating new prompt")
 
-        base_instruction = custom_system_prompt.strip() or self.STYLES.get(
+        is_custom_only = enhancement_style == CUSTOM_ONLY_STYLE
+        style_instruction = "" if is_custom_only else self.STYLES.get(
             enhancement_style,
             next(iter(self.STYLES.values()), ""),
-        )
+        ).strip()
+        custom_instruction = custom_system_prompt.strip()
+        base_instruction = "\n\n".join(part for part in (custom_instruction, style_instruction) if part)
+        if not base_instruction and is_custom_only:
+            raise ValueError("custom_system_prompt is required when using Custom Only (no preset).")
+        base_instruction = "\n\n".join(part for part in (base_instruction, prompt_output_guard()) if part)
         user_prompt = prompt_text.strip() or "Describe a scene vividly."
         merged_prompt = f"{user_prompt}\n\n{base_instruction}".strip()
         if model_name in HF_TEXT_MODELS:
@@ -243,6 +254,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
 
         signature = (repo_id, quantization, device)
         if self.text_model is not None and self.text_signature == signature:
+            ensure_cuda_vram_headroom("QwenVL PromptEnhancer HF", min_free_gb=1.0, min_free_ratio=0.08)
             return
 
         self.text_model = None
@@ -259,6 +271,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         self.text_tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
         self.text_model = AutoModelForCausalLM.from_pretrained(repo_id, trust_remote_code=True, **load_kwargs).eval()
         self.text_model.to(device)
+        ensure_cuda_vram_headroom("QwenVL PromptEnhancer HF", min_free_gb=1.0, min_free_ratio=0.08)
         # Detect architecture from loaded model config
         hf_model_type = getattr(self.text_model.config, "model_type", None)
         self.is_qwen35 = hf_model_type in ("qwen3_5", "qwen3_5_moe", "qwen3_5_vl") if hf_model_type else "qwen3.5-" in model_name.lower()
@@ -280,6 +293,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         seed,
     ):
         self._load_text_model(model_name, quantization, device)
+        ensure_cuda_vram_headroom("QwenVL PromptEnhancer HF", min_free_gb=1.0, min_free_ratio=0.08)
 
         if device == "auto":
             device_choice = "cuda" if torch.cuda.is_available() else ("mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu")
@@ -323,6 +337,7 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         input_length = inputs["input_ids"].shape[1]
         generated_tokens = outputs[0][input_length:]
         result = self.text_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        result = clean_model_output(result, OutputCleanConfig(mode="prompt")) or result
 
         # Cache the generated text
         # PROMPT_CACHE[cache_key] = {

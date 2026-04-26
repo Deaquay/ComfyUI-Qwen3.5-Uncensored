@@ -28,10 +28,14 @@ _IM_TOKEN_RE = re.compile(
 )
 _PLANNING_RE = re.compile(
     r"(?is)\b("
+    r"final\s+plan\b|"
+    r"final\s+check\b|"
     r"i\s+(should|need|must|will|want|am\s+going\s+to|have\s+to)\b|"
     r"let's\b|"
     r"first\b|next\b|then\b|"
     r"wait\b|"
+    r"ready\s+to\s+write\b|"
+    r"writing\s+the\s+prompt\b|"
     r"so\s+i\s+need\s+to\b|"
     r"i\s+should\s+focus\s+on\b"
     r")"
@@ -155,3 +159,12 @@ def _strip_planning_paragraphs(text: str) -> str:
     if not kept:
         return text.strip()
     return "\n\n".join(kept).strip()
+
+
+def prompt_output_guard() -> str:
+    return (
+        "Output rules that override all style preferences: return only the final usable prompt text. "
+        "Do not include analysis, planning, bullet points, headings, markdown, JSON, explanations, alternatives, self-corrections, or notes. "
+        "Do not write phrases such as Final Plan, Final Check, Wait, Okay, First, Next, Then, I will, or I need. "
+        "Start directly with the required prompt text."
+    )
