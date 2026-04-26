@@ -32,14 +32,15 @@ LAST_SAVED_PROMPT = None
 
 NODE_DIR = Path(__file__).parent
 SYSTEM_PROMPTS_PATH = NODE_DIR / "AILab_System_Prompts.json"
+CUSTOM_ONLY_STYLE = "✍️ Custom Only (no preset)"
 
 DEFAULT_STYLES = {
-    "📝 Enhance": "Expand and enrich this prompt with vivid visual context:",
-    "📝 Refine": "Polish this prompt for clarity and precise AI interpretation:",
-    "📝 Creative Rewrite": "Rewrite this prompt imaginatively while preserving intent:",
-    "📝 Detailed Visual": "Turn this prompt into a highly detailed visual description:",
-    "📝 Artistic Style": "Describe this prompt in artistic language suitable for image generation:",
-    "📝 Technical Specs": "Convert this prompt into clear technical parameters:",
+    "📝 Enhance": "Write one production-ready prompt paragraph in the same language as the user. Expand the idea with concrete subject, action, environment, lighting, camera, composition, color, texture, mood, and style details. Output only the final prompt paragraph.",
+    "📝 Refine": "Write one polished prompt paragraph in the same language as the user. Preserve the core intent, remove redundancy and contradiction, and add useful visual specificity for subject, scene, lighting, camera perspective, composition, palette, texture, and atmosphere. Output only the final prompt paragraph.",
+    "📝 Creative Rewrite": "Write one fresh, imaginative prompt paragraph in the same language as the user. Preserve the core intent while adding cohesive cinematic atmosphere, gesture, micro-details, color relationships, light interaction, materials, depth, and composition. Output only the final prompt paragraph.",
+    "📝 Detailed Visual": "Write one highly detailed visual prompt paragraph in the same language as the user. Include subject traits, pose, expression, wardrobe, materials, foreground, midground, background, lighting source and direction, palette, contrast, lens feel, depth of field, framing, and final aesthetic style. Output only the final prompt paragraph.",
+    "📝 Artistic Style": "Write one artistic prompt paragraph in the same language as the user. Build a coherent visual direction with mood, palette, shape language, contrast, material feel, camera perspective, composition rhythm, and fitting style references. Output only the final prompt paragraph.",
+    "📝 Technical Specs": "Write one clear technical photography or cinematography prompt paragraph in the same language as the user. Include camera distance, angle, lens feel, aperture or depth of field, focus target, lighting type and direction, color temperature, contrast, framing, background separation, texture rendering, and final image style. Output only the final prompt paragraph.",
 }
 
 
@@ -65,6 +66,7 @@ def _load_prompt_styles() -> dict[str, str]:
 
 
 PROMPT_STYLES = _load_prompt_styles()
+PROMPT_STYLES = {CUSTOM_ONLY_STYLE: "", **PROMPT_STYLES}
 
 
 class AILab_QwenVL_PromptEnhancer(QwenVLBase):
@@ -141,12 +143,15 @@ class AILab_QwenVL_PromptEnhancer(QwenVLBase):
         # Always generate when keep last prompt is disabled
         print(f"[QwenVL PromptEnhancer HF] Keep last prompt disabled - generating new prompt")
 
-        style_instruction = self.STYLES.get(
+        is_custom_only = enhancement_style == CUSTOM_ONLY_STYLE
+        style_instruction = "" if is_custom_only else self.STYLES.get(
             enhancement_style,
             next(iter(self.STYLES.values()), ""),
         ).strip()
         custom_instruction = custom_system_prompt.strip()
         base_instruction = "\n\n".join(part for part in (custom_instruction, style_instruction) if part)
+        if not base_instruction and is_custom_only:
+            raise ValueError("custom_system_prompt is required when using Custom Only (no preset).")
         user_prompt = prompt_text.strip() or "Describe a scene vividly."
         merged_prompt = f"{user_prompt}\n\n{base_instruction}".strip()
         if model_name in HF_TEXT_MODELS:

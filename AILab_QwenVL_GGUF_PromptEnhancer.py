@@ -58,6 +58,7 @@ def load_prompt_config():
 
 PROMPT_CONFIG = load_prompt_config()
 STYLES = PROMPT_CONFIG.get("styles", {})
+CUSTOM_ONLY_STYLE = "✍️ Custom Only (no preset)"
 
 
 def _safe_dirname(value: str) -> str:
@@ -211,7 +212,7 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
 
     @classmethod
     def INPUT_TYPES(cls):
-        styles = list(STYLES.keys())
+        styles = [CUSTOM_ONLY_STYLE] + list(STYLES.keys())
         preferred_style = "📝 Enhance"
         default_style = preferred_style if preferred_style in styles else (styles[0] if styles else "📝 Enhance")
         temp = cls.load_gguf_models()
@@ -519,19 +520,22 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
                 print(f"[QwenVL PromptEnhancer GGUF] Using cached prompt for seed {seed}: {cache_key[:8]}...")
                 return (cached_text.strip(),)
         
-        style_entry = self.styles.get(preset_system_prompt, {})
+        is_custom_only = preset_system_prompt == CUSTOM_ONLY_STYLE
+        style_entry = {} if is_custom_only else self.styles.get(preset_system_prompt, {})
         style_system_prompt = (style_entry.get("system_prompt") or "").strip()
         custom_system_prompt = custom_system_prompt.strip()
         system_prompt = "\n\n".join(part for part in (custom_system_prompt, style_system_prompt) if part).strip()
         if not system_prompt:
+            if is_custom_only:
+                raise ValueError("custom_system_prompt is required when using Custom Only (no preset).")
             raise ValueError("system_prompt is empty; check AILab_System_Prompts.json or preset selection.")
-        system_prompt = (
-            f"{system_prompt}\n\n"
-            "Return only the final prompt text. No preface, no explanations, no analysis, no JSON, no markdown fences, and no </think>.\n"
-            "Do not write planning steps (no 'First', 'Next', 'Then') and do not use first-person ('I', 'we')."
-        )
-        user_prompt = prompt_text.strip() or "Describe a scene vividly."
-        merged_prompt = user_prompt
+        if not is_custom_only:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "Return only the final prompt text. No preface, no explanations, no analysis, no JSON, no markdown fences, and no </think>.\n"
+                "Do not write planning steps (no 'First', 'Next', 'Then') and do not use first-person ('I', 'we')."
+            )
+        merged_prompt = prompt_text.strip() or "Describe a scene vividly."
         self._load_model(model_name, device)
         enhanced = self._invoke_llama(
             system_prompt=system_prompt,
