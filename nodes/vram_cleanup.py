@@ -27,7 +27,7 @@ class VRAMCleanup:
                     "Cache Only",
                     "Text Encoder",
                     "Full Cleanup",
-                    "T2V + QwenVL Fix"
+                    "T2V + Qwen Fix"
                 ], {"default": "Cache Only"}),
             }
         }
@@ -35,7 +35,7 @@ class VRAMCleanup:
     RETURN_TYPES = ("*",)  # Pass through the input
     RETURN_NAMES = ("output",)
     FUNCTION = "cleanup_vram_memory"
-    CATEGORY = "🔷 QwenVL-Mod/Utils"
+    CATEGORY = "🔞 Qwen3.5-Uncensored"
     OUTPUT_NODE = True
     
     def cleanup_vram_memory(self, input, cleanup_mode):
@@ -57,7 +57,7 @@ class VRAMCleanup:
                 self._text_encoder()
             elif cleanup_mode == "Full Cleanup":
                 self._full_cleanup()
-            elif cleanup_mode == "T2V + QwenVL Fix":
+            elif cleanup_mode == "T2V + Qwen Fix":
                 self._t2v_qwen_fix()
             
             # Report final memory state
@@ -123,7 +123,7 @@ class VRAMCleanup:
             print(f"⚠️ Full cleanup warning: {e}")
     
     def _t2v_qwen_fix(self):
-        """Special fix for T2V + QwenVL conflict - uses Easy Use method"""
+        """Special fix for T2V + Qwen conflict - uses Easy Use method"""
         try:
             if torch.cuda.is_available():
                 try:
@@ -151,10 +151,10 @@ class VRAMCleanup:
                 
                 torch.cuda.synchronize()
                 gc.collect()
-                print("  T2V + QwenVL fix completed")
+                print("  T2V + Qwen fix completed")
             
         except Exception as e:
-            print(f"⚠️ T2V + QwenVL fix warning: {e}")
+            print(f"⚠️ T2V + Qwen fix warning: {e}")
 
 # Register the node
 NODE_CLASS_MAPPINGS = {
