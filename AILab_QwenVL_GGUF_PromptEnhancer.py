@@ -30,7 +30,7 @@ from AILab_OutputCleaner import OutputCleanConfig, clean_model_output
 import sys
 sys.path.append(str(Path(__file__).parent))
 from AILab_QwenVL import PROMPT_CACHE, get_cache_key, get_alternative_cache_key, save_prompt_cache
-from AILab_QwenVL_GGUF import read_gguf_architecture
+from AILab_QwenVL_GGUF import read_gguf_architecture, find_in_llm_paths
 
 # Simple global variable to store last generated prompt
 LAST_SAVED_PROMPT = None
@@ -107,7 +107,7 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         if not base_dir.exists() or not base_dir.is_dir():
             return local_models
         try:
-            for gguf_file in base_dir.rglob("*.gguf"):
+            for gguf_file in base_dir.rglob("*.gguf", recurse_symlinks=True):
                 if not gguf_file.is_file():
                     continue
                 # Skip mmproj files — they are vision projectors, not text models
@@ -296,9 +296,25 @@ class AILab_QwenVL_GGUF_PromptEnhancer:
         if filename:
             author = _safe_dirname(str(entry.get("author") or entry.get("publisher") or ""))
             repo_dir = _safe_dirname(str(entry.get("repo_dirname") or model_name))
+            bare = Path(filename).name
             if author and author != "unknown":
-                return base_dir / author / repo_dir / Path(filename).name
-            return base_dir / repo_dir / Path(filename).name
+                default_path = base_dir / author / repo_dir / bare
+            else:
+                default_path = base_dir / repo_dir / bare
+
+            if default_path.exists():
+                return default_path
+
+            found = find_in_llm_paths(
+                filename,
+                str(entry.get("author") or entry.get("publisher") or ""),
+                str(entry.get("repo_dirname") or model_name),
+            )
+            if found is not None:
+                print(f"[QwenVL] Using model from alternate LLM path: {found}")
+                return found
+
+            return default_path
 
         return base_dir / model_name
 

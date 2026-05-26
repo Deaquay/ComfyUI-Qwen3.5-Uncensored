@@ -166,6 +166,49 @@ def _safe_dirname(value: str) -> str:
     return "".join(ch for ch in value if ch.isalnum() or ch in "._- ").strip() or "unknown"
 
 
+def find_in_llm_paths(filename: str, author: str = "", repo_dirname: str = "") -> Path | None:
+    """Search ComfyUI's registered LLM folder paths for an existing GGUF file.
+
+    Honours alternate paths declared via extra_model_paths.yaml so catalog entries
+    whose default location is empty can still be located on a secondary drive.
+    """
+    bare = Path(filename).name
+    try:
+        if "LLM" not in folder_paths.folder_names_and_paths:
+            return None
+        llm_roots = folder_paths.get_folder_paths("LLM")
+    except Exception:
+        return None
+
+    author_dir = _safe_dirname(author) if author else ""
+    repo_dir = _safe_dirname(repo_dirname) if repo_dirname else ""
+
+    for llm_root in llm_roots:
+        root = Path(llm_root)
+        candidates: list[Path] = []
+        if author_dir and author_dir != "unknown" and repo_dir:
+            candidates.append(root / "GGUF" / author_dir / repo_dir / bare)
+            candidates.append(root / author_dir / repo_dir / bare)
+        if repo_dir:
+            candidates.append(root / "GGUF" / repo_dir / bare)
+            candidates.append(root / repo_dir / bare)
+        candidates.append(root / "GGUF" / bare)
+        candidates.append(root / bare)
+        for c in candidates:
+            if c.exists():
+                return c
+
+    for llm_root in llm_roots:
+        try:
+            matches = list(Path(llm_root).rglob(bare))
+            if matches:
+                return matches[0]
+        except Exception:
+            continue
+
+    return None
+
+
 def _model_name_to_filename_candidates(model_name: str) -> set[str]:
     raw = (model_name or "").strip()
     if not raw:
@@ -189,7 +232,7 @@ def _scan_local_gguf_models(base_dir: Path, existing_filenames: set[str]) -> dic
     # Walk all subdirectories and collect .gguf files grouped by parent directory
     dirs_with_gguf: dict[Path, list[Path]] = {}
     try:
-        for gguf_file in base_dir.rglob("*.gguf"):
+        for gguf_file in base_dir.rglob("*.gguf", recurse_symlinks=True):
             if gguf_file.is_file():
                 parent = gguf_file.parent
                 dirs_with_gguf.setdefault(parent, []).append(gguf_file)
@@ -201,8 +244,11 @@ def _scan_local_gguf_models(base_dir: Path, existing_filenames: set[str]) -> dic
         mmproj_files = [f for f in gguf_files if "mmproj" in f.name.lower()]
         model_files = [f for f in gguf_files if "mmproj" not in f.name.lower()]
 
-        # Pick the first mmproj file in this directory (if any)
-        mmproj_path = mmproj_files[0] if mmproj_files else None
+        # Vision-only node: skip directories without a paired mmproj
+        if not mmproj_files:
+            continue
+
+        mmproj_path = mmproj_files[0]
 
         for model_file in model_files:
             # Skip if this filename is already in the JSON catalog
@@ -212,7 +258,7 @@ def _scan_local_gguf_models(base_dir: Path, existing_filenames: set[str]) -> dic
             display = f"[local] {model_file.name}"
             local_models[display] = {
                 "filename": str(model_file),
-                "mmproj_filename": str(mmproj_path) if mmproj_path else None,
+                "mmproj_filename": str(mmproj_path),
                 "is_local": True,
                 "repo_id": None,
                 "alt_repo_ids": [],
@@ -258,6 +304,10 @@ def _load_gguf_vl_catalog():
         defaults = repo.get("defaults") or {}
         mmproj_file = repo.get("mmproj_file")
         model_files = repo.get("model_files") or []
+
+        # Vision-only node: skip catalog repos without an mmproj projector
+        if not mmproj_file:
+            continue
 
         for model_file in model_files:
             display = Path(model_file).name
@@ -543,14 +593,24 @@ class QwenVLGGUFBase:
             repo_ids.extend(resolved.alt_repo_ids)
 
             if not model_path.exists():
-                if not repo_ids:
-                    raise FileNotFoundError(f"[QwenVL] GGUF model not found locally and no repo_id provided: {model_path}")
-                _download_single_file(repo_ids, resolved.model_filename, model_path)
+                found = find_in_llm_paths(resolved.model_filename, resolved.author or "", resolved.repo_dirname or "")
+                if found is not None:
+                    print(f"[QwenVL] Using model from alternate LLM path: {found}")
+                    model_path = found
+                else:
+                    if not repo_ids:
+                        raise FileNotFoundError(f"[QwenVL] GGUF model not found locally and no repo_id provided: {model_path}")
+                    _download_single_file(repo_ids, resolved.model_filename, model_path)
 
             if mmproj_path is not None and not mmproj_path.exists():
-                if not repo_ids:
-                    raise FileNotFoundError(f"[QwenVL] mmproj not found locally and no repo_id provided: {mmproj_path}")
-                _download_single_file(repo_ids, resolved.mmproj_filename, mmproj_path)
+                found_mm = find_in_llm_paths(resolved.mmproj_filename, resolved.author or "", resolved.repo_dirname or "")
+                if found_mm is not None:
+                    print(f"[QwenVL] Using mmproj from alternate LLM path: {found_mm}")
+                    mmproj_path = found_mm
+                else:
+                    if not repo_ids:
+                        raise FileNotFoundError(f"[QwenVL] mmproj not found locally and no repo_id provided: {mmproj_path}")
+                    _download_single_file(repo_ids, resolved.mmproj_filename, mmproj_path)
 
         device_kind = _pick_device(device)
 
