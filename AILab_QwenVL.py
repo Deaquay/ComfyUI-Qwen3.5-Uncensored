@@ -42,6 +42,8 @@ except ImportError:
 PROMPT_CACHE = {}
 CACHE_FILE = Path(__file__).parent / "prompt_cache.json"
 
+ATTENTION_MODES = ["auto", "sage", "flash_attention_2", "sdpa"]
+
 # Simple global variable to store last generated prompt
 LAST_SAVED_PROMPT = None
 
